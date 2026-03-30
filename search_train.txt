@@ -1,0 +1,75 @@
+from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+
+REPORT_URL = "https://YOUR_SITE/..."  # 실제 리포트 페이지 URL
+
+# 아래 2개는 환경에 맞게 바꾸세요.
+SEARCH_BTN_SELECTOR = "button.Style_Button-bDBZvm"   # 돋보기 버튼(보고서 생성)
+REPORT_CONTAINER_SELECTOR = "#plugin_report_div"     # flush 응답에 있던 report 영역(없으면 다른 것으로)
+
+def generate_report(page, start_time: str, end_time: str) -> str:
+    """
+    start_time/end_time 예시:
+      - 페이지가 datetime input이면: '2026-03-05 09:00'
+      - 페이지가 date+time 분리면: 각각 맞게 수정 필요
+    반환: flush로 내려온 보고서 HTML(또는 최종 DOM HTML)
+    """
+
+    # 1) 리포트 페이지 진입
+    page.goto(REPORT_URL, wait_until="domcontentloaded")
+
+    # 2) 시간 설정 (사이트마다 다르므로 selector는 반드시 맞춰야 함)
+    # 예시: input 2개가 있고, start/end를 채운다고 가정
+    # 개발자도구에서 start/end input의 selector를 확인해 아래를 바꾸세요.
+    #
+    # page.fill('input[name="start"]', start_time)
+    # page.fill('input[name="end"]', end_time)
+    #
+    # 만약 달력 UI라면 fill 대신 click+type이 필요할 수 있음:
+    # page.click('input[name="start"]')
+    # page.keyboard.type(start_time)
+    #
+    # 여기서는 "시간 설정은 이미 해둔 상태"라고 가정하고 넘어갑니다.
+
+    # 3) (중요) flush 응답을 기다릴 준비
+    # 보고서 생성 클릭 시 flush가 뜬다고 했으니, 클릭과 동시에 wait_for_response를 겁니다.
+    def is_flush(resp):
+        return ("flush" in resp.url) and (resp.status == 200)
+
+    # 4) 보고서 생성(돋보기) 클릭 + flush 수신 대기
+    try:
+        with page.expect_response(is_flush, timeout=30_000) as resp_info:
+            page.click(SEARCH_BTN_SELECTOR)
+        flush_resp = resp_info.value
+        flush_html = flush_resp.text()
+    except PWTimeout:
+        # flush가 없을 때는 DOM 변화 기반으로 대기하는 fallback
+        flush_html = ""
+        # 보고서 영역이 DOM에 생기는지 대기
+        try:
+            page.wait_for_selector(REPORT_CONTAINER_SELECTOR, timeout=10_000)
+            flush_html = page.content()
+        except PWTimeout:
+            raise RuntimeError("보고서 생성 후 flush 응답도 없고, 보고서 DOM도 생성되지 않았습니다. selector/버튼/시간설정을 재확인하세요.")
+
+    # 5) 보고서가 화면에 붙는 시간을 약간 주는 게 안전(사이트에 따라 필요)
+    page.wait_for_timeout(500)
+
+    return flush_html
+
+
+def main():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)   # 디버깅 중이면 False 추천
+        page = browser.new_page()
+
+        html = generate_report(page, start_time="2026-03-05 09:00", end_time="2026-03-05 18:00")
+
+        print("Report HTML length:", len(html))
+        # 필요하면 파일 저장
+        with open("report_flush.html", "w", encoding="utf-8") as f:
+            f.write(html)
+
+        browser.close()
+
+if __name__ == "__main__":
+    main()

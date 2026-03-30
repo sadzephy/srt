@@ -1,0 +1,30 @@
+# Build output
+bin/
+.buildozer/
+
+# APK files
+*.apk
+
+# Logs
+error_log.txt
+full_error_log.txt
+*.log
+
+# Screenshots
+화면 캡처*.png
+
+# Sensitive settings
+settings.enc
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
