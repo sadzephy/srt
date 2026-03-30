@@ -1354,24 +1354,33 @@ class SRTApp(App):
         Window.clearcolor = BG
 
         def _full_redraw(dt):
-            if not self._widget:
-                return
-            # 최상위 + 모든 자식 위젯 캔버스 강제 갱신
+            # Window 캔버스 갱신 (OpenGL 컨텍스트 복구 핵심)
             try:
-                for w in self._widget.walk():
-                    try:
-                        w.canvas.ask_update()
-                    except Exception:
-                        pass
+                Window.canvas.ask_update()
             except Exception:
                 pass
-            self._widget.canvas.ask_update()
+            # 루트(ScrollView) 포함 전체 위젯 트리 갱신
+            if self.root:
+                try:
+                    for w in self.root.walk():
+                        try:
+                            w.canvas.ask_update()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            if self._widget:
+                try:
+                    self._widget.canvas.ask_update()
+                except Exception:
+                    pass
 
         # OpenGL 컨텍스트 복구 타이밍이 불규칙해서 여러 번 시도
         Clock.schedule_once(_full_redraw, 0)
         Clock.schedule_once(_full_redraw, 0.3)
         Clock.schedule_once(_full_redraw, 1.0)
         Clock.schedule_once(_full_redraw, 2.5)
+        Clock.schedule_once(_full_redraw, 5.0)
 
         # 알람 끄기 버튼으로 복귀한 경우 자동 중지
         try:
