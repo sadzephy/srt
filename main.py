@@ -1680,18 +1680,20 @@ class SRTApp(App):
         from kivy.clock import Clock
         Window.clearcolor = BG
 
+        _attempts = [0]
+
         def _trigger_resize(dt):
-            # on_resize 강제 디스패치 → Kivy가 프레임버퍼 완전 재구성
+            _attempts[0] += 1
             try:
+                Window.canvas.ask_update()
                 Window.dispatch("on_resize", *Window.size)
             except Exception:
                 pass
+            if _attempts[0] >= 30:  # 0.5초 간격 × 30회 = 15초
+                return False  # 인터벌 취소
 
-        # GL 컨텍스트 복구 타이밍이 불규칙하므로 여러 번 시도
-        Clock.schedule_once(_trigger_resize, 0.1)
-        Clock.schedule_once(_trigger_resize, 0.5)
-        Clock.schedule_once(_trigger_resize, 1.5)
-        Clock.schedule_once(_trigger_resize, 3.0)
+        # GL 컨텍스트 복구 타이밍이 불규칙하므로 15초간 반복 시도
+        Clock.schedule_interval(_trigger_resize, 0.5)
 
         # 알람 끄기 버튼으로 복귀한 경우 자동 중지
         try:
