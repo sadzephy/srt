@@ -1101,7 +1101,6 @@ class SRTWidget(BoxLayout):
     def set_status(self, msg: str):
         self.status_label.text = msg
 
-    @mainthread
     def _start_alarm(self):
         """진동 알람 시작 - 알림 버튼 또는 중지 버튼으로 중지"""
         try:
@@ -1142,6 +1141,7 @@ class SRTWidget(BoxLayout):
         self._stop_alarm()
         self._dismiss_notify()
 
+    @mainthread
     def _notify(self, title: str, text: str):
         self._start_alarm()
         try:
@@ -1153,10 +1153,9 @@ class SRTWidget(BoxLayout):
             PendingIntent = autoclass("android.app.PendingIntent")
             Notification  = autoclass("android.app.Notification")
             PowerManager  = autoclass("android.os.PowerManager")
-            Intent        = autoclass("android.content.Intent")
             ctx = PA.mActivity
 
-            # 화면 강제 켜기
+            # 화면 강제 켜기 (메인 스레드에서 실행해야 동작)
             pm = ctx.getSystemService(ctx.POWER_SERVICE)
             wl = pm.newWakeLock(
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK |
@@ -1164,9 +1163,22 @@ class SRTWidget(BoxLayout):
                 PowerManager.ON_AFTER_RELEASE,
                 "srt:alarm_screen")
             wl.acquire(60000)
+
+            # 잠금 화면 위에 Activity 표시 (API 27+)
             try:
                 ctx.setShowWhenLocked(True)
                 ctx.setTurnScreenOn(True)
+            except Exception:
+                pass
+
+            # 잠금 화면 위에 윈도우 표시 플래그 (구형 API 호환)
+            try:
+                WindowManager = autoclass("android.view.WindowManager$LayoutParams")
+                ctx.getWindow().addFlags(
+                    WindowManager.FLAG_SHOW_WHEN_LOCKED |
+                    WindowManager.FLAG_TURN_SCREEN_ON   |
+                    WindowManager.FLAG_KEEP_SCREEN_ON
+                )
             except Exception:
                 pass
 
@@ -1175,17 +1187,17 @@ class SRTWidget(BoxLayout):
             nm = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
             if nm.getNotificationChannel(ch_id) is None:
                 ch = NotifCh(ch_id, "SRT 예매 완료 알람", NotifMgr.IMPORTANCE_HIGH)
-                ch.enableVibration(False)   # 진동은 Vibrator로 직접 처리
+                ch.enableVibration(False)
                 nm.createNotificationChannel(ch)
 
-            # 앱 실행 인텐트 (알림 본체 터치 시)
+            # 앱 실행 인텐트
             launch_intent = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName())
             launch_intent.addFlags(0x10000000)
             launch_pi = PendingIntent.getActivity(
                 ctx, 0, launch_intent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
 
-            # 알림 빌드 (알람 끄기 버튼 제외 — jnius 오버로드 오류로 비활성화)
+            # 알림 빌드 — 잠금 화면 전체화면 표시
             builder = (NotifBuilder(ctx, ch_id)
                        .setContentTitle(title)
                        .setContentText(text)
