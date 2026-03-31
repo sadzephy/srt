@@ -1086,12 +1086,16 @@ class SRTWidget(BoxLayout):
         return type("_S", (), {"text": self._seat_val})()
 
     # ── 유틸 ────────────────────────────────────────────────
-    @mainthread
     def log(self, msg: str):
+        # @mainthread 스케줄링 전에 체크 → 잠금 중 Clock 큐 누적 방지
         if self._log_paused:
-            return  # 화면 잠금 중 쌓인 콜백 폭발 방지
+            return
+        self._log_mainthread(msg)
+
+    @mainthread
+    def _log_mainthread(self, msg: str):
         self.log_box.text += msg + "\n"
-        self.log_box.scroll_y = 0  # 항상 최신 줄로 스크롤
+        self.log_box.scroll_y = 0
 
     @mainthread
     def set_status(self, msg: str):
@@ -1467,7 +1471,7 @@ class SRTWidget(BoxLayout):
         relogin_event.set()
         last_relogin_t   = [0.0]                      # 마지막 재로그인 시각
         relogin_fail_cnt = [0]                        # 연속 재로그인 실패 횟수
-        MAX_RELOGIN_FAIL = 5                          # N회 연속 실패 시 전체 중지
+        MAX_RELOGIN_FAIL = 10                         # N회 연속 실패 시 전체 중지
         TARGET_RPS       = n_workers                  # 목표 초당 요청 수 = 동시 요청 수
         slot_lock        = threading.Lock()           # 요청 슬롯 제어
         next_slot_t      = [time.time()]              # 다음 요청 허용 시각
@@ -1594,7 +1598,9 @@ class SRTWidget(BoxLayout):
                                     next_slot_t[0] = time.time()  # 재로그인 후 슬롯 리셋 → 버스트 방지
                                     self.log("✅ 전체 세션 재로그인 성공")
                                 except Exception as le:
-                                    relogin_fail_cnt[0] += 1
+                                    # 화면 잠금 중 발생한 실패는 카운터 제외
+                                    if not self._log_paused:
+                                        relogin_fail_cnt[0] += 1
                                     fail = relogin_fail_cnt[0]
                                     wait = min(3 * (2 ** (fail - 1)), 60)
                                     self.log(f"재로그인 실패({fail}회): {le} → {wait}초 대기")
@@ -1613,8 +1619,8 @@ class SRTWidget(BoxLayout):
                 if not self._running or reserved[0]:
                     return
 
-        # 선제적 재로그인 스케줄러 — 5초마다 세션 만료 전에 재로그인
-        RELOGIN_INTERVAL = 5
+        # 선제적 재로그인 스케줄러 — 60초마다 세션 만료 전에 재로그인
+        RELOGIN_INTERVAL = 60
 
         def _scheduled_relogin():
             time.sleep(3)  # 초기 대기 (워커 안정화)
