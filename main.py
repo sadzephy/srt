@@ -784,13 +784,20 @@ class HistoryPopup(ModalView):
                                 halign="center", size_hint_y=None, height=dp(80)))
         else:
             for entry in reversed(self._history):  # 최신순
-                row = BoxLayout(orientation="vertical", size_hint_y=None,
+                event  = entry.get("event", "")
+                detail = entry.get("detail", "")
+                result = entry.get("result", "")
+                color  = EVENT_COLOR.get(event, GRAY1)
+
+                # 높이를 명시적으로 계산 (BoxLayout은 minimum_height 미지원)
+                row_h = dp(10) + dp(22) + dp(2)          # 패딩상단 + 시간행 + 간격
+                if detail: row_h += dp(22) + dp(2)
+                if result: row_h += dp(20) + dp(2)
+                row_h += dp(1) + dp(10)                  # 구분선 + 패딩하단
+
+                row = BoxLayout(orientation="vertical", size_hint_y=None, height=row_h,
                                 padding=[dp(14), dp(10), dp(14), dp(10)],
                                 spacing=dp(2))
-                row.bind(minimum_height=row.setter("height"))
-
-                event = entry.get("event", "")
-                color = EVENT_COLOR.get(event, GRAY1)
 
                 top = BoxLayout(size_hint_y=None, height=dp(22))
                 top.add_widget(lbl(entry.get("time", ""), size=12,
@@ -800,13 +807,10 @@ class HistoryPopup(ModalView):
                                    size_hint=(None, 1), width=dp(70)))
                 row.add_widget(top)
 
-                detail = entry.get("detail", "")
                 if detail:
                     row.add_widget(lbl(detail, size=14, color=DARK,
                                        halign="left", valign="middle",
                                        size_hint_y=None, height=dp(22)))
-
-                result = entry.get("result", "")
                 if result:
                     row.add_widget(lbl(result, size=13, color=color,
                                        halign="left", valign="middle",
@@ -1303,10 +1307,11 @@ class SRTWidget(BoxLayout):
 
         popup = ModalView(background_color=(0, 0, 0, 0.75), size_hint=(1, 1),
                           auto_dismiss=False)
+        # 높이 = 패딩상하(56) + 제목(48) + 텍스트(60) + 버튼(52) + 간격(32)
         card = BoxLayout(orientation="vertical", spacing=dp(16),
                          padding=[dp(24), dp(32), dp(24), dp(24)],
-                         size_hint=(0.88, None), pos_hint={"center_x": 0.5, "center_y": 0.5})
-        card.bind(minimum_height=card.setter("height"))
+                         size_hint=(0.88, None), height=dp(248),
+                         pos_hint={"center_x": 0.5, "center_y": 0.5})
 
         with card.canvas.before:
             Color(0.13, 0.18, 0.28, 1)
@@ -1363,7 +1368,7 @@ class SRTWidget(BoxLayout):
     def _send_android_notification(self, title: str, text: str):
         """Android 알림 전송 — 백그라운드 스레드에서도 동작 (잠금화면 포함)"""
         try:
-            from jnius import autoclass, PythonJavaClass, java_method
+            from jnius import autoclass
             PA            = autoclass("org.kivy.android.PythonActivity")
             NotifBuilder  = autoclass("android.app.Notification$Builder")
             NotifMgr      = autoclass("android.app.NotificationManager")
@@ -1382,37 +1387,9 @@ class SRTWidget(BoxLayout):
                 "srt:alarm_screen")
             wl.acquire(60000)
 
-            # setShowWhenLocked / 윈도우 플래그는 Android UI 스레드 필요
-            # → runOnUiThread 로 전달
-            try:
-                class _ShowWhenLockedRunnable(PythonJavaClass):
-                    __javainterfaces__ = ['java/lang/Runnable']
-                    __javacontext__ = 'app'
-
-                    def __init__(self, activity):
-                        self._ctx = activity
-                        super().__init__()
-
-                    @java_method('()V')
-                    def run(self):
-                        try:
-                            self._ctx.setShowWhenLocked(True)
-                            self._ctx.setTurnScreenOn(True)
-                        except Exception:
-                            pass
-                        try:
-                            WLP = autoclass("android.view.WindowManager$LayoutParams")
-                            self._ctx.getWindow().addFlags(
-                                WLP.FLAG_SHOW_WHEN_LOCKED |
-                                WLP.FLAG_TURN_SCREEN_ON   |
-                                WLP.FLAG_KEEP_SCREEN_ON
-                            )
-                        except Exception:
-                            pass
-
-                ctx.runOnUiThread(_ShowWhenLockedRunnable(ctx))
-            except Exception:
-                pass
+            # setShowWhenLocked / 윈도우 플래그 — Kivy 메인 스레드(Clock)에서 실행
+            # (앱이 잠금화면 위로 올라올 때 적용됨)
+            Clock.schedule_once(lambda dt: self._apply_lock_screen_flags(), 0)
 
             # 알림 채널 (thread-safe)
             ch_id = "srt_alarm"
@@ -1443,6 +1420,30 @@ class SRTWidget(BoxLayout):
             self.log("🔔 알림 전송 완료")
         except Exception as e:
             self.log(f"⚠ 알림 실패: {e}")
+
+    @mainthread
+    def _apply_lock_screen_flags(self):
+        """잠금화면 위 Activity 표시 플래그 — 메인 스레드에서 실행"""
+        try:
+            from jnius import autoclass
+            PA  = autoclass("org.kivy.android.PythonActivity")
+            ctx = PA.mActivity
+            try:
+                ctx.setShowWhenLocked(True)
+                ctx.setTurnScreenOn(True)
+            except Exception:
+                pass
+            try:
+                WLP = autoclass("android.view.WindowManager$LayoutParams")
+                ctx.getWindow().addFlags(
+                    WLP.FLAG_SHOW_WHEN_LOCKED |
+                    WLP.FLAG_TURN_SCREEN_ON   |
+                    WLP.FLAG_KEEP_SCREEN_ON
+                )
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     @mainthread
     def _dismiss_notify(self):
