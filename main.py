@@ -730,6 +730,7 @@ class SRTWidget(BoxLayout):
         self._alarm_player    = None
         self._vibrator        = None
         self._sched_cancel    = None
+        self._alarm_popup     = None
         self._log_paused      = False
         self._dep = "수서"; self._arr = "부산"
         self._date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1121,8 +1122,6 @@ class SRTWidget(BoxLayout):
 
             self._vibrator = vib
             self.log("📳 진동 알람 시작")
-            from kivy.core.window import Window
-            Window.bind(on_touch_down=self._on_touch_stop_alarm)
         except Exception as e:
             self.log(f"⚠ 알람 실패: {e}")
             self._vibrator = None
@@ -1132,18 +1131,69 @@ class SRTWidget(BoxLayout):
             if getattr(self, "_vibrator", None):
                 self._vibrator.cancel()
                 self._vibrator = None
-            from kivy.core.window import Window
-            Window.unbind(on_touch_down=self._on_touch_stop_alarm)
         except Exception:
             pass
 
-    def _on_touch_stop_alarm(self, *_):
-        self._stop_alarm()
-        self._dismiss_notify()
+    @mainthread
+    def _show_alarm_overlay(self, title: str, text: str):
+        """예매 완료 화면 오버레이 — 앱 위에 전체화면으로 표시"""
+        if self._alarm_popup:
+            return  # 이미 표시 중
+
+        popup = ModalView(background_color=(0, 0, 0, 0.75), size_hint=(1, 1),
+                          auto_dismiss=False)
+        card = BoxLayout(orientation="vertical", spacing=dp(16),
+                         padding=[dp(24), dp(32), dp(24), dp(24)],
+                         size_hint=(0.88, None), pos_hint={"center_x": 0.5, "center_y": 0.5})
+        card.bind(minimum_height=card.setter("height"))
+
+        with card.canvas.before:
+            Color(0.13, 0.18, 0.28, 1)
+            self._alarm_card_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(20)])
+
+        def _update_card_rect(inst, val):
+            self._alarm_card_rect.pos  = inst.pos
+            self._alarm_card_rect.size = inst.size
+
+        card.bind(pos=_update_card_rect, size=_update_card_rect)
+
+        card.add_widget(Label(
+            text="🎉 예매 완료!",
+            font_name="NanumGothic", font_size=dp(26),
+            color=(0.3, 1, 0.5, 1), bold=True,
+            size_hint_y=None, height=dp(48),
+            halign="center", valign="middle"
+        ))
+        card.add_widget(Label(
+            text=text,
+            font_name="NanumGothic", font_size=dp(15),
+            color=(0.9, 0.9, 0.9, 1),
+            size_hint_y=None, height=dp(60),
+            halign="center", valign="middle",
+            text_size=(dp(260), None)
+        ))
+
+        dismiss_btn = Button(
+            text="알람 해제",
+            font_name="NanumGothic", font_size=dp(18),
+            size_hint=(1, None), height=dp(52),
+            background_normal="", background_color=(0.2, 0.55, 1, 1)
+        )
+
+        def _on_dismiss(*_):
+            self._stop_alarm()
+            self._dismiss_notify()
+
+        dismiss_btn.bind(on_release=_on_dismiss)
+        card.add_widget(dismiss_btn)
+        popup.add_widget(card)
+        self._alarm_popup = popup
+        popup.open()
 
     @mainthread
     def _notify(self, title: str, text: str):
         self._start_alarm()
+        self._show_alarm_overlay(title, text)
         try:
             from jnius import autoclass
             PA            = autoclass("org.kivy.android.PythonActivity")
@@ -1214,7 +1264,13 @@ class SRTWidget(BoxLayout):
 
     @mainthread
     def _dismiss_notify(self):
-        """예매 완료 알림 제거"""
+        """예매 완료 알림 제거 + 오버레이 닫기"""
+        if self._alarm_popup:
+            try:
+                self._alarm_popup.dismiss()
+            except Exception:
+                pass
+            self._alarm_popup = None
         try:
             from jnius import autoclass
             PA  = autoclass("org.kivy.android.PythonActivity")
@@ -1705,9 +1761,12 @@ class SRTApp(App):
         Window.clearcolor = BG
         self._resuming = True
 
+        _attempts = [0]
+
         def _restore_gl(dt):
             if not self._resuming:
                 return False
+            _attempts[0] += 1
             try:
                 # GL 컨텍스트 완전 복구 (텍스처/VBO/셰이더 전체 재업로드)
                 from kivy.graphics.context import get_context
@@ -1719,8 +1778,10 @@ class SRTApp(App):
                 Window.dispatch("on_resize", *Window.size)
             except Exception:
                 pass
+            if _attempts[0] >= 10:
+                return False  # 5초 후 중단 (0.5s × 10)
 
-        # GL 컨텍스트 복구될 때까지 0.5초 간격으로 계속 시도
+        # GL 컨텍스트 복구될 때까지 0.5초 간격으로 최대 5초간 시도
         Clock.schedule_interval(_restore_gl, 0.5)
 
         # 잠금 중 쌓인 로그 콜백 폭발 방지: 1초 후 로깅 재개
