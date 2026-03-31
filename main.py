@@ -1523,7 +1523,7 @@ class SRTWidget(BoxLayout):
                         seat_type = SeatType.SPECIAL_ONLY
                     else:  # 아무거나
                         seat_ok   = target.general_seat_available() or target.special_seat_available()
-                        seat_type = SeatType.GENERAL_FIRST
+                        seat_type = SeatType.SPECIAL_FIRST
 
                     if target is None:
                         if do_log_100:
