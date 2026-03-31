@@ -716,6 +716,118 @@ class TimePickerPopup(ModalView):
         self.dismiss()
 
 
+# ── 예매 이력 팝업 ──────────────────────────────────────────
+class HistoryPopup(ModalView):
+    def __init__(self, history: list, on_clear, **kw):
+        super().__init__(background_color=(0, 0, 0, 0.55), size_hint=(1, 1), **kw)
+        self._history  = history
+        self._on_clear = on_clear
+        self._build()
+
+    def _build(self):
+        # 외부 카드
+        outer = BoxLayout(orientation="vertical",
+                          size_hint=(0.93, 0.80),
+                          pos_hint={"center_x": 0.5, "center_y": 0.52})
+        with outer.canvas.before:
+            Color(*BG)
+            self._outer_rect = RoundedRectangle(pos=outer.pos, size=outer.size,
+                                                radius=[dp(20)])
+        outer.bind(pos=lambda i, v: setattr(self._outer_rect, "pos", v),
+                   size=lambda i, v: setattr(self._outer_rect, "size", v))
+
+        # 헤더
+        hdr = BoxLayout(size_hint_y=None, height=dp(52),
+                        padding=[dp(16), 0, dp(8), 0])
+        hdr.add_widget(lbl("📋 예매 이력", size=18, bold=True,
+                           size_hint_x=1, halign="left", valign="middle"))
+        clear_btn = Button(text="전체 삭제", size_hint=(None, None),
+                           size=(dp(80), dp(36)),
+                           background_normal="", background_color=(0.7, 0.2, 0.2, 1),
+                           color=WHITE, font_size=dp(13), bold=True,
+                           font_name="NanumGothic")
+        def _clear(*_):
+            self._on_clear()
+            self.dismiss()
+        clear_btn.bind(on_press=_clear)
+        hdr.add_widget(clear_btn)
+        close_btn = Button(text="✕", size_hint=(None, None), size=(dp(44), dp(44)),
+                           background_normal="", background_color=(0, 0, 0, 0),
+                           color=GRAY1, font_size=dp(20))
+        close_btn.bind(on_press=lambda _: self.dismiss())
+        hdr.add_widget(close_btn)
+        outer.add_widget(hdr)
+
+        # 구분선
+        sep = Widget(size_hint_y=None, height=dp(1))
+        with sep.canvas:
+            Color(*LIGHT_BG)
+            Rectangle(pos=sep.pos, size=sep.size)
+        sep.bind(pos=lambda i, v: setattr(sep.canvas.children[-1], "pos", v),
+                 size=lambda i, v: setattr(sep.canvas.children[-1], "size", v))
+        outer.add_widget(sep)
+
+        # 이력 목록 (스크롤)
+        scroll = ScrollView(always_overscroll=False, effect_cls=ScrollEffect)
+        grid   = GridLayout(cols=1, size_hint_y=None, spacing=0)
+        grid.bind(minimum_height=grid.setter("height"))
+
+        EVENT_COLOR = {
+            "시작":  (0.35, 0.55, 1.0, 1),
+            "예약시작": (0.35, 0.55, 1.0, 1),
+            "중지":  (0.55, 0.55, 0.65, 1),
+            "완료":  (0.25, 0.85, 0.50, 1),
+        }
+
+        if not self._history:
+            grid.add_widget(lbl("이력이 없습니다.", size=15, color=GRAY1,
+                                halign="center", size_hint_y=None, height=dp(80)))
+        else:
+            for entry in reversed(self._history):  # 최신순
+                row = BoxLayout(orientation="vertical", size_hint_y=None,
+                                padding=[dp(14), dp(10), dp(14), dp(10)],
+                                spacing=dp(2))
+                row.bind(minimum_height=row.setter("height"))
+
+                event = entry.get("event", "")
+                color = EVENT_COLOR.get(event, GRAY1)
+
+                top = BoxLayout(size_hint_y=None, height=dp(22))
+                top.add_widget(lbl(entry.get("time", ""), size=12,
+                                   color=GRAY1, halign="left", valign="middle"))
+                top.add_widget(lbl(f"[{event}]", size=13, bold=True,
+                                   color=color, halign="right", valign="middle",
+                                   size_hint=(None, 1), width=dp(70)))
+                row.add_widget(top)
+
+                detail = entry.get("detail", "")
+                if detail:
+                    row.add_widget(lbl(detail, size=14, color=DARK,
+                                       halign="left", valign="middle",
+                                       size_hint_y=None, height=dp(22)))
+
+                result = entry.get("result", "")
+                if result:
+                    row.add_widget(lbl(result, size=13, color=color,
+                                       halign="left", valign="middle",
+                                       size_hint_y=None, height=dp(20)))
+
+                # 하단 구분선
+                div = Widget(size_hint_y=None, height=dp(1))
+                with div.canvas:
+                    Color(*LIGHT_BG)
+                    div_rect = Rectangle(pos=div.pos, size=div.size)
+                div.bind(pos=lambda i, v, r=div_rect: setattr(r, "pos", v),
+                         size=lambda i, v, r=div_rect: setattr(r, "size", v))
+                row.add_widget(div)
+
+                grid.add_widget(row)
+
+        scroll.add_widget(grid)
+        outer.add_widget(scroll)
+        self.add_widget(outer)
+
+
 # ── 메인 위젯 ──────────────────────────────────────────────
 class SRTWidget(BoxLayout):
     def __init__(self, **kw):
@@ -732,11 +844,13 @@ class SRTWidget(BoxLayout):
         self._sched_cancel    = None
         self._alarm_popup     = None
         self._log_paused      = False
+        self._history         = []
         self._dep = "수서"; self._arr = "부산"
         self._date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         self._hour = "17"
         self._build_ui()
         self._load_settings()
+        self._load_history()
         Clock.schedule_once(lambda dt: self._request_battery_opt(), 2)
 
     def _spacer(self, h=8):
@@ -824,6 +938,48 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
+    # ── 이력 ────────────────────────────────────────────────
+    def _history_path(self):
+        try:
+            from jnius import autoclass
+            PA = autoclass("org.kivy.android.PythonActivity")
+            return os.path.join(PA.mActivity.getFilesDir().getAbsolutePath(), "history.json")
+        except Exception:
+            return os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.json")
+
+    def _load_history(self):
+        import json
+        try:
+            path = self._history_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    self._history = json.load(f)
+        except Exception:
+            self._history = []
+
+    def _save_history(self):
+        import json
+        try:
+            with open(self._history_path(), "w", encoding="utf-8") as f:
+                json.dump(self._history[-200:], f, ensure_ascii=False)  # 최대 200건
+        except Exception:
+            pass
+
+    def _add_history(self, event: str, detail: str = "", result: str = ""):
+        self._history.append({
+            "time":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "event":  event,
+            "detail": detail,
+            "result": result,
+        })
+        self._save_history()
+
+    def _open_history(self):
+        def _clear():
+            self._history.clear()
+            self._save_history()
+        HistoryPopup(self._history, on_clear=_clear).open()
+
     def _save_card(self):
         self._save_settings()
         self.log("💳 카드 정보 암호화 저장 완료")
@@ -854,6 +1010,11 @@ class SRTWidget(BoxLayout):
             tb.add_widget(_icon)
         tb.add_widget(lbl("파덕이의 SRT 예매", size=26, color=PRIMARY, bold=True,
                           size_hint_y=None, height=dp(60)))
+        hist_btn = Button(text="📋", size_hint=(None, None), size=(dp(44), dp(44)),
+                          background_normal="", background_color=(0, 0, 0, 0),
+                          font_size=dp(22))
+        hist_btn.bind(on_press=lambda _: self._open_history())
+        tb.add_widget(hist_btn)
         self.add_widget(tb)
 
         # ── 로그인 ──
@@ -1517,18 +1678,22 @@ class SRTWidget(BoxLayout):
             time.sleep(1)
 
     def _do_start(self):
-        self.log(f"\n▶ {self._target_train.train_number}호 "
-                 f"{self._target_train.dep_time[:2]}:{self._target_train.dep_time[2:4]} 예매 시작")
+        t = self._target_train
+        dep_hm = f"{t.dep_time[:2]}:{t.dep_time[2:4]}"
+        self.log(f"\n▶ {t.train_number}호 {dep_hm} 예매 시작")
+        detail = f"{self._dep}→{self._arr}  {self._date}  {dep_hm}  {self._seat_val}"
+        self._add_history("시작", detail)
         self._running = True
         self.start_btn.disabled = True
         self.stop_btn.disabled  = False
         self._acquire_wake_lock()
         threading.Thread(target=self._reserve_loop, daemon=True).start()
 
-    def stop(self):
+    def stop(self, _record=True):
         if self._sched_cancel:
             self._sched_cancel.set()
             self._sched_cancel = None
+        was_running = self._running
         self._running = False
         self._release_wake_lock()
         self._stop_alarm()
@@ -1536,6 +1701,11 @@ class SRTWidget(BoxLayout):
         self.set_status("중지됨")
         self.start_btn.disabled = False
         self.stop_btn.disabled  = True
+        if _record and was_running and self._target_train:
+            t = self._target_train
+            dep_hm = f"{t.dep_time[:2]}:{t.dep_time[2:4]}"
+            detail = f"{self._dep}→{self._arr}  {self._date}  {dep_hm}  {self._seat_val}"
+            self._add_history("중지", detail)
 
     # ── 예매 루프 ────────────────────────────────────────────
     def _reserve_loop(self):
@@ -1651,9 +1821,13 @@ class SRTWidget(BoxLayout):
                         else:
                             self.log("💳 카드 미등록 - 앱에서 20분 내 수동 결제 필요")
                         self.set_status("✅ 예매 완료!")
-                        self._notify("🎉 SRT 예매 완료!", f"열차 {target.train_number}호 예매 성공!")
+                        dep_hm  = f"{target.dep_time[:2]}:{target.dep_time[2:4]}"
+                        detail  = f"{self._dep}→{self._arr}  {self._date}  {dep_hm}  {self._seat_val}"
+                        result  = f"열차 {target.train_number}호 예매 성공!"
+                        self._add_history("완료", detail, result)
+                        self._notify("🎉 SRT 예매 완료!", result)
                         self._release_wake_lock()
-                        self.stop(); return
+                        self.stop(_record=False); return
 
                 except Exception as e:
                     err = str(e)
