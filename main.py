@@ -740,7 +740,7 @@ class HistoryPopup(ModalView):
         hdr = BoxLayout(size_hint_y=None, height=dp(52),
                         padding=[dp(16), 0, dp(8), 0])
         hdr.add_widget(lbl("📋 예매 이력", size=18, bold=True,
-                           size_hint_x=1, halign="left", valign="middle"))
+                           size_hint_x=1, halign="left"))
         clear_btn = Button(text="전체 삭제", size_hint=(None, None),
                            size=(dp(80), dp(36)),
                            background_normal="", background_color=(0.7, 0.2, 0.2, 1),
@@ -801,19 +801,19 @@ class HistoryPopup(ModalView):
 
                 top = BoxLayout(size_hint_y=None, height=dp(22))
                 top.add_widget(lbl(entry.get("time", ""), size=12,
-                                   color=GRAY1, halign="left", valign="middle"))
+                                   color=GRAY1, halign="left"))
                 top.add_widget(lbl(f"[{event}]", size=13, bold=True,
-                                   color=color, halign="right", valign="middle",
+                                   color=color, halign="right",
                                    size_hint=(None, 1), width=dp(70)))
                 row.add_widget(top)
 
                 if detail:
                     row.add_widget(lbl(detail, size=14, color=DARK,
-                                       halign="left", valign="middle",
+                                       halign="left",
                                        size_hint_y=None, height=dp(22)))
                 if result:
                     row.add_widget(lbl(result, size=13, color=color,
-                                       halign="left", valign="middle",
+                                       halign="left",
                                        size_hint_y=None, height=dp(20)))
 
                 # 하단 구분선
@@ -846,7 +846,7 @@ class SRTWidget(BoxLayout):
         self._alarm_player    = None
         self._vibrator        = None
         self._sched_cancel    = None
-        self._alarm_popup     = None
+
         self._log_paused      = False
         self._history         = []
         self._dep = "수서"; self._arr = "부산"
@@ -1014,9 +1014,12 @@ class SRTWidget(BoxLayout):
             tb.add_widget(_icon)
         tb.add_widget(lbl("파덕이의 SRT 예매", size=26, color=PRIMARY, bold=True,
                           size_hint_y=None, height=dp(60)))
-        hist_btn = Button(text="📋", size_hint=(None, None), size=(dp(44), dp(44)),
-                          background_normal="", background_color=(0, 0, 0, 0),
-                          font_size=dp(22))
+        _hist_icon_path = resource_find("history_icon.png") or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "history_icon.png")
+        hist_btn = Button(text="", size_hint=(None, None), size=(dp(52), dp(52)),
+                          background_normal=_hist_icon_path or "",
+                          background_down=_hist_icon_path or "",
+                          background_color=(1, 1, 1, 1))
         hist_btn.bind(on_press=lambda _: self._open_history())
         tb.add_widget(hist_btn)
         self.add_widget(tb)
@@ -1299,71 +1302,10 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
-    @mainthread
-    def _show_alarm_overlay(self, title: str, text: str):
-        """예매 완료 화면 오버레이 — 앱 위에 전체화면으로 표시"""
-        if self._alarm_popup:
-            return  # 이미 표시 중
-
-        popup = ModalView(background_color=(0, 0, 0, 0.75), size_hint=(1, 1),
-                          auto_dismiss=False)
-        # 높이 = 패딩상하(56) + 제목(48) + 텍스트(60) + 버튼(52) + 간격(32)
-        card = BoxLayout(orientation="vertical", spacing=dp(16),
-                         padding=[dp(24), dp(32), dp(24), dp(24)],
-                         size_hint=(0.88, None), height=dp(248),
-                         pos_hint={"center_x": 0.5, "center_y": 0.5})
-
-        with card.canvas.before:
-            Color(0.13, 0.18, 0.28, 1)
-            self._alarm_card_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(20)])
-
-        def _update_card_rect(inst, val):
-            self._alarm_card_rect.pos  = inst.pos
-            self._alarm_card_rect.size = inst.size
-
-        card.bind(pos=_update_card_rect, size=_update_card_rect)
-
-        card.add_widget(Label(
-            text="🎉 예매 완료!",
-            font_name="NanumGothic", font_size=dp(26),
-            color=(0.3, 1, 0.5, 1), bold=True,
-            size_hint_y=None, height=dp(48),
-            halign="center", valign="middle"
-        ))
-        card.add_widget(Label(
-            text=text,
-            font_name="NanumGothic", font_size=dp(15),
-            color=(0.9, 0.9, 0.9, 1),
-            size_hint_y=None, height=dp(60),
-            halign="center", valign="middle",
-            text_size=(dp(260), None)
-        ))
-
-        dismiss_btn = Button(
-            text="알람 해제",
-            font_name="NanumGothic", font_size=dp(18),
-            size_hint=(1, None), height=dp(52),
-            background_normal="", background_color=(0.2, 0.55, 1, 1)
-        )
-
-        def _on_dismiss(*_):
-            self._stop_alarm()
-            self._dismiss_notify()
-
-        dismiss_btn.bind(on_release=_on_dismiss)
-        card.add_widget(dismiss_btn)
-        popup.add_widget(card)
-        self._alarm_popup = popup
-        popup.open()
-
     def _notify(self, title: str, text: str):
-        """예매 완료 알림 — 워커 스레드에서 직접 호출 (잠금화면 즉시 동작)"""
-        # 1. 진동: 어느 스레드에서나 가능
+        """예매 완료 알림 — 진동 + Android 시스템 알림"""
         self._start_alarm()
-        # 2. Android 알림 + 화면 깨우기: thread-safe API 직접 호출
         self._send_android_notification(title, text)
-        # 3. Kivy 오버레이: 메인 스레드 필요 (잠금해제 후 표시됨)
-        self._show_alarm_overlay(title, text)
 
     def _send_android_notification(self, title: str, text: str):
         """Android 알림 전송 — 백그라운드 스레드에서도 동작 (잠금화면 포함)"""
@@ -1447,13 +1389,7 @@ class SRTWidget(BoxLayout):
 
     @mainthread
     def _dismiss_notify(self):
-        """예매 완료 알림 제거 + 오버레이 닫기"""
-        if self._alarm_popup:
-            try:
-                self._alarm_popup.dismiss()
-            except Exception:
-                pass
-            self._alarm_popup = None
+        """예매 완료 알림 제거"""
         try:
             from jnius import autoclass
             PA  = autoclass("org.kivy.android.PythonActivity")
