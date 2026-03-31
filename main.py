@@ -730,6 +730,7 @@ class SRTWidget(BoxLayout):
         self._alarm_player    = None
         self._vibrator        = None
         self._sched_cancel    = None
+        self._log_paused      = False
         self._dep = "수서"; self._arr = "부산"
         self._date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         self._hour = "17"
@@ -1087,6 +1088,8 @@ class SRTWidget(BoxLayout):
     # ── 유틸 ────────────────────────────────────────────────
     @mainthread
     def log(self, msg: str):
+        if self._log_paused:
+            return  # 화면 잠금 중 쌓인 콜백 폭발 방지
         self.log_box.text += msg + "\n"
         self.log_box.scroll_y = 0  # 항상 최신 줄로 스크롤
 
@@ -1674,6 +1677,7 @@ class SRTApp(App):
     def on_pause(self):
         self._resuming = False
         if self._widget:
+            self._widget._log_paused = True  # 잠금 중 로그 억제
             self._widget._save_settings()
         return True
 
@@ -1683,17 +1687,27 @@ class SRTApp(App):
         Window.clearcolor = BG
         self._resuming = True
 
-        def _trigger_resize(dt):
+        def _restore_gl(dt):
             if not self._resuming:
-                return False  # on_pause 호출됨 → 중단
+                return False
+            try:
+                # GL 컨텍스트 완전 복구 (텍스처/VBO/셰이더 전체 재업로드)
+                from kivy.graphics.context import get_context
+                get_context().reload()
+            except Exception:
+                pass
             try:
                 Window.canvas.ask_update()
                 Window.dispatch("on_resize", *Window.size)
             except Exception:
                 pass
 
-        # 화면이 완전히 복구될 때까지 0.5초 간격으로 계속 시도
-        Clock.schedule_interval(_trigger_resize, 0.5)
+        # GL 컨텍스트 복구될 때까지 0.5초 간격으로 계속 시도
+        Clock.schedule_interval(_restore_gl, 0.5)
+
+        # 잠금 중 쌓인 로그 콜백 폭발 방지: 1초 후 로깅 재개
+        Clock.schedule_once(lambda dt: self._widget and
+                            setattr(self._widget, '_log_paused', False), 1.0)
 
         # 알람 끄기 버튼으로 복귀한 경우 자동 중지
         try:
