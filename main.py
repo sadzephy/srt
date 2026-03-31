@@ -773,10 +773,11 @@ class HistoryPopup(ModalView):
         grid.bind(minimum_height=grid.setter("height"))
 
         EVENT_COLOR = {
-            "시작":  (0.35, 0.55, 1.0, 1),
+            "시작":   (0.35, 0.55, 1.0,  1),
             "예약시작": (0.35, 0.55, 1.0, 1),
-            "중지":  (0.55, 0.55, 0.65, 1),
-            "완료":  (0.25, 0.85, 0.50, 1),
+            "중지":   (0.55, 0.55, 0.65, 1),
+            "중단":   (0.85, 0.45, 0.20, 1),  # 주황 — OS 강제 종료
+            "완료":   (0.25, 0.85, 0.50, 1),
         }
 
         if not self._history:
@@ -960,6 +961,15 @@ class SRTWidget(BoxLayout):
                     self._history = json.load(f)
         except Exception:
             self._history = []
+        # 마지막 항목이 "시작"이면 → 앱이 강제 종료된 것으로 간주
+        if self._history and self._history[-1].get("event") == "시작":
+            self._history.append({
+                "time":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "event":  "중단",
+                "detail": self._history[-1].get("detail", ""),
+                "result": "앱 강제 종료 (OS에 의해 중단됨)",
+            })
+            self._save_history()
 
     def _save_history(self):
         import json
@@ -1307,6 +1317,48 @@ class SRTWidget(BoxLayout):
         self._start_alarm()
         self._send_android_notification(title, text)
 
+    def _show_booking_notification(self, detail: str):
+        """예매 진행 중 지속 알림 — 상태바에 표시하여 OS가 프로세스를 종료하지 않도록 유도"""
+        try:
+            from jnius import autoclass
+            PA           = autoclass("org.kivy.android.PythonActivity")
+            NotifBuilder = autoclass("android.app.Notification$Builder")
+            NotifMgr     = autoclass("android.app.NotificationManager")
+            NotifCh      = autoclass("android.app.NotificationChannel")
+            Notification = autoclass("android.app.Notification")
+            PendingIntent= autoclass("android.app.PendingIntent")
+            ctx = PA.mActivity
+            ch_id = "srt_booking"
+            nm = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
+            if nm.getNotificationChannel(ch_id) is None:
+                ch = NotifCh(ch_id, "SRT 예매 진행 중", NotifMgr.IMPORTANCE_LOW)
+                ch.enableVibration(False)
+                nm.createNotificationChannel(ch)
+            launch_intent = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName())
+            launch_intent.addFlags(0x10000000)
+            pi = PendingIntent.getActivity(ctx, 1, launch_intent,
+                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
+            builder = (NotifBuilder(ctx, ch_id)
+                       .setContentTitle("🔄 SRT 예매 진행 중")
+                       .setContentText(detail)
+                       .setSmallIcon(ctx.getApplicationInfo().icon)
+                       .setContentIntent(pi)
+                       .setOngoing(True)
+                       .setPriority(Notification.PRIORITY_LOW))
+            nm.notify(101, builder.build())
+        except Exception:
+            pass
+
+    def _cancel_booking_notification(self):
+        """예매 진행 중 알림 제거"""
+        try:
+            from jnius import autoclass
+            PA  = autoclass("org.kivy.android.PythonActivity")
+            ctx = PA.mActivity
+            ctx.getSystemService(ctx.NOTIFICATION_SERVICE).cancel(101)
+        except Exception:
+            pass
+
     def _send_android_notification(self, title: str, text: str):
         """Android 알림 전송 — 백그라운드 스레드에서도 동작 (잠금화면 포함)"""
         try:
@@ -1624,6 +1676,8 @@ class SRTWidget(BoxLayout):
         self.start_btn.disabled = True
         self.stop_btn.disabled  = False
         self._acquire_wake_lock()
+        threading.Thread(target=lambda: self._show_booking_notification(detail),
+                         daemon=True).start()
         threading.Thread(target=self._reserve_loop, daemon=True).start()
 
     def stop(self, _record=True):
@@ -1635,6 +1689,7 @@ class SRTWidget(BoxLayout):
         self._release_wake_lock()
         self._stop_alarm()
         self._dismiss_notify()
+        threading.Thread(target=self._cancel_booking_notification, daemon=True).start()
         self.set_status("중지됨")
         self.start_btn.disabled = False
         self.stop_btn.disabled  = True
