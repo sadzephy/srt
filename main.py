@@ -27,6 +27,7 @@ import calendar as cal_module
 import threading
 import time
 from SRT import SRT
+from SRT.seat_type import SeatType
 
 # ── 폰트 ──────────────────────────────────────────────────
 for _p in [
@@ -484,6 +485,237 @@ class DateTimePickerPopup(ModalView):
         self.dismiss()
 
 
+class TimePickerPopup(ModalView):
+    """날짜+시+분 선택 팝업 (예약 시작 시간용)"""
+    def __init__(self, date_str, hour, minute, callback, **kw):
+        super().__init__(background_color=(0,0,0,0.45), size_hint=(1,1), **kw)
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        self._year    = d.year
+        self._month   = d.month
+        self._day     = d.day
+        self._hour    = hour
+        self._minute  = minute
+        self._callback  = callback
+        self._day_btns    = {}
+        self._hour_btns   = {}
+        self._minute_btns = {}
+        self._build()
+
+    def _build(self):
+        outer = BoxLayout(orientation="vertical", size_hint=(0.95, None),
+                          pos_hint={"center_x": 0.5, "center_y": 0.5})
+        with outer.canvas.before:
+            Color(*WHITE)
+            self._bg = RoundedRectangle(radius=[dp(20)])
+        outer.bind(pos=lambda *_: setattr(self._bg, "pos", outer.pos),
+                   size=lambda *_: setattr(self._bg, "size", outer.size),
+                   minimum_height=outer.setter("height"))
+
+        # 타이틀
+        tr = BoxLayout(size_hint_y=None, height=dp(54), padding=[dp(16),0,dp(8),0])
+        tr.add_widget(lbl("예약 시작 일시", size=18, bold=True, halign="center"))
+        x = Button(text="✕", size_hint=(None,None), size=(dp(44),dp(44)),
+                   background_normal="", background_color=(0,0,0,0),
+                   color=GRAY1, font_size=dp(20))
+        x.bind(on_press=lambda _: self.dismiss())
+        tr.add_widget(x)
+        outer.add_widget(tr)
+
+        # 달력
+        self._cal_box = BoxLayout(orientation="vertical", size_hint_y=None)
+        self._cal_box.bind(minimum_height=self._cal_box.setter("height"))
+        self._render_calendar()
+        outer.add_widget(self._cal_box)
+
+        sep = Widget(size_hint_y=None, height=dp(1))
+        with sep.canvas:
+            Color(*GRAY2)
+            Rectangle(pos=sep.pos, size=sep.size)
+        outer.add_widget(sep)
+
+        # 시간 선택
+        hdr_h = BoxLayout(size_hint_y=None, height=dp(36), padding=[dp(14),0])
+        hdr_h.add_widget(lbl("⏰ 시간", size=14, bold=True, color=DARK))
+        self._hour_lbl = lbl(f"{self._hour:02d}시", size=14, bold=True,
+                              color=PRIMARY, halign="right")
+        hdr_h.add_widget(self._hour_lbl)
+        outer.add_widget(hdr_h)
+
+        hour_scroll = ScrollView(size_hint_y=None, height=dp(64))
+        hour_row = BoxLayout(size_hint_x=None, spacing=dp(6), padding=[dp(10),dp(8)])
+        hour_row.bind(minimum_width=hour_row.setter("width"))
+        for h in range(24):
+            hb = ToggleButton(text=f"{h:02d}", group="tp_hours",
+                              size_hint=(None,None), size=(dp(54),dp(48)),
+                              background_normal="", background_down="",
+                              background_color=(0,0,0,0),
+                              color=DARK, font_size=dp(15), bold=True)
+            hb.val = h
+            if h == self._hour:
+                hb.state = "down"
+            hb.bind(on_press=self._on_hour, pos=self._draw_hm_btn,
+                    size=self._draw_hm_btn, state=self._draw_hm_btn)
+            self._draw_hm_btn(hb)
+            hour_row.add_widget(hb)
+            self._hour_btns[h] = hb
+        hour_scroll.add_widget(hour_row)
+        outer.add_widget(hour_scroll)
+
+        # 분 선택
+        hdr_m = BoxLayout(size_hint_y=None, height=dp(36), padding=[dp(14),0])
+        hdr_m.add_widget(lbl("⏱ 분", size=14, bold=True, color=DARK))
+        self._minute_lbl = lbl(f"{self._minute:02d}분", size=14, bold=True,
+                                color=PRIMARY, halign="right")
+        hdr_m.add_widget(self._minute_lbl)
+        outer.add_widget(hdr_m)
+
+        min_scroll = ScrollView(size_hint_y=None, height=dp(64))
+        min_row = BoxLayout(size_hint_x=None, spacing=dp(6), padding=[dp(10),dp(8)])
+        min_row.bind(minimum_width=min_row.setter("width"))
+        for m in range(60):
+            mb = ToggleButton(text=f"{m:02d}", group="tp_minutes",
+                              size_hint=(None,None), size=(dp(54),dp(48)),
+                              background_normal="", background_down="",
+                              background_color=(0,0,0,0),
+                              color=DARK, font_size=dp(15), bold=True)
+            mb.val = m
+            if m == self._minute:
+                mb.state = "down"
+            mb.bind(on_press=self._on_minute, pos=self._draw_hm_btn,
+                    size=self._draw_hm_btn, state=self._draw_hm_btn)
+            self._draw_hm_btn(mb)
+            min_row.add_widget(mb)
+            self._minute_btns[m] = mb
+        min_scroll.add_widget(min_row)
+        outer.add_widget(min_scroll)
+
+        done = PillButton("선택완료", bg=PRIMARY, height=dp(60))
+        done.bind(on_press=self._confirm)
+        outer.add_widget(done)
+
+        self.add_widget(outer)
+
+    def _render_calendar(self):
+        self._cal_box.clear_widgets()
+        self._day_btns = {}
+        today = datetime.now().date()
+        max_date = today + timedelta(days=29)
+
+        nav = BoxLayout(size_hint_y=None, height=dp(48), padding=[dp(8),0])
+        prev = Button(text="이전월", size_hint=(None,1), width=dp(72),
+                      background_normal="", background_color=LIGHT_BG,
+                      color=DARK, font_size=dp(13), bold=True)
+        prev.bind(on_press=lambda _: self._change_month(-1))
+        nav.add_widget(prev)
+        nav.add_widget(lbl(f"{self._year}.{self._month}", size=18, bold=True,
+                           halign="center"))
+        nxt = Button(text="다음월", size_hint=(None,1), width=dp(72),
+                     background_normal="", background_color=LIGHT_BG,
+                     color=DARK, font_size=dp(13), bold=True)
+        nxt.bind(on_press=lambda _: self._change_month(1))
+        nav.add_widget(nxt)
+        self._cal_box.add_widget(nav)
+
+        dow = GridLayout(cols=7, size_hint_y=None, height=dp(36))
+        for i, d in enumerate(["일","월","화","수","목","금","토"]):
+            c = (0.85,0.2,0.2,1) if i==0 else (0.2,0.3,0.85,1) if i==6 else GRAY1
+            dow.add_widget(lbl(d, size=13, bold=True, color=c, halign="center",
+                               size_hint_y=None, height=dp(36)))
+        self._cal_box.add_widget(dow)
+
+        cal = cal_module.Calendar(firstweekday=6).monthdayscalendar(self._year, self._month)
+        for week in cal:
+            row = GridLayout(cols=7, size_hint_y=None, height=dp(48))
+            for i, day in enumerate(week):
+                if day == 0:
+                    row.add_widget(Widget()); continue
+                d        = datetime(self._year, self._month, day).date()
+                disabled = d < today or d > max_date
+                is_today = (d == today)
+                is_sel   = (day == self._day)
+                base_color = (0.78,0.76,0.82,1) if disabled else \
+                             ((0.85,0.2,0.2,1) if i==0 else
+                              (0.2,0.3,0.85,1) if i==6 else DARK)
+                btn = Button(text=str(day),
+                             background_normal="", background_color=(0,0,0,0),
+                             color=base_color, font_size=dp(15),
+                             bold=(is_today or is_sel))
+                btn.day = day; btn._is_sel = is_sel; btn._is_today = is_today
+                btn._base_color = base_color; btn._disabled_date = disabled
+                if not disabled:
+                    btn.bind(on_press=self._on_day)
+                btn.bind(
+                    pos=lambda b, *_: self._draw_day_btn(b, b._is_sel, b._is_today),
+                    size=lambda b, *_: self._draw_day_btn(b, b._is_sel, b._is_today),
+                )
+                row.add_widget(btn)
+                self._day_btns[day] = (btn, is_today)
+            self._cal_box.add_widget(row)
+
+    def _draw_day_btn(self, btn, selected, is_today):
+        btn.canvas.before.clear()
+        inset = dp(4)
+        with btn.canvas.before:
+            if selected and not getattr(btn, '_disabled_date', False):
+                Color(*PRIMARY)
+                Ellipse(pos=(btn.x+inset, btn.y+inset),
+                        size=(btn.width-inset*2, btn.height-inset*2))
+                btn.color = WHITE
+            elif is_today:
+                Color(*ACCENT_P)
+                Ellipse(pos=(btn.x+inset, btn.y+inset),
+                        size=(btn.width-inset*2, btn.height-inset*2))
+                btn.color = getattr(btn, '_base_color', DARK)
+            else:
+                btn.color = getattr(btn, '_base_color', DARK)
+
+    def _on_day(self, btn):
+        old = self._day
+        self._day = btn.day
+        if old in self._day_btns:
+            ob, ot = self._day_btns[old]
+            ob._is_sel = False
+            self._draw_day_btn(ob, False, ot)
+        btn._is_sel = True
+        self._draw_day_btn(btn, True, False)
+
+    def _change_month(self, delta):
+        m = self._month + delta
+        y = self._year
+        if m > 12: m = 1;  y += 1
+        if m < 1:  m = 12; y -= 1
+        self._year = y; self._month = m
+        self._render_calendar()
+
+    def _draw_hm_btn(self, btn, *_):
+        btn.canvas.before.clear()
+        with btn.canvas.before:
+            if btn.state == "down":
+                Color(*PRIMARY)
+                btn.color = WHITE
+            else:
+                Color(*LIGHT_BG)
+                btn.color = DARK
+            RoundedRectangle(pos=btn.pos, size=btn.size, radius=[dp(12)])
+
+    def _on_hour(self, btn):
+        self._hour = btn.val
+        self._hour_lbl.text = f"{self._hour:02d}시"
+        for hb in self._hour_btns.values():
+            self._draw_hm_btn(hb)
+
+    def _on_minute(self, btn):
+        self._minute = btn.val
+        self._minute_lbl.text = f"{self._minute:02d}분"
+        for mb in self._minute_btns.values():
+            self._draw_hm_btn(mb)
+
+    def _confirm(self, *_):
+        date_str = f"{self._year}-{self._month:02d}-{self._day:02d}"
+        self._callback(date_str, self._hour, self._minute)
+        self.dismiss()
+
+
 # ── 메인 위젯 ──────────────────────────────────────────────
 class SRTWidget(BoxLayout):
     def __init__(self, **kw):
@@ -497,11 +729,13 @@ class SRTWidget(BoxLayout):
         self._wifi_lock    = None
         self._alarm_player    = None
         self._vibrator        = None
+        self._sched_cancel    = None
         self._dep = "수서"; self._arr = "부산"
         self._date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         self._hour = "17"
         self._build_ui()
         self._load_settings()
+        Clock.schedule_once(lambda dt: self._request_battery_opt(), 2)
 
     def _spacer(self, h=8):
         return Widget(size_hint_y=None, height=dp(h))
@@ -728,6 +962,31 @@ class SRTWidget(BoxLayout):
 
         self.add_widget(self._spacer(4))
 
+        # ── 예약 시작 시간 설정 ──
+        self.add_widget(lbl("예약 시작 시간 설정 (선택)", size=12, color=GRAY1, bold=True,
+                            size_hint_y=None, height=dp(20)))
+        self._sched_date   = datetime.now().strftime("%Y-%m-%d")
+        self._sched_hour   = 8
+        self._sched_minute = 0
+        sched_box = RoundBox(orientation="horizontal", radius=12, bg=LIGHT_BG,
+                             size_hint_y=None, height=dp(56),
+                             padding=(dp(12), dp(6)), spacing=dp(8))
+        self._sched_toggle = ToggleButton(
+            text="⏰ 예약 시작", size_hint=(None, 1), width=dp(130),
+            background_normal="", background_down="",
+            color=GRAY1, bold=True, font_size=dp(14),
+        )
+        def _on_sched_toggle(btn, state):
+            btn.color = PRIMARY if state == "down" else GRAY1
+        self._sched_toggle.bind(state=_on_sched_toggle)
+        self._sched_time_btn = FieldBtn(f"{self._sched_date}  {self._sched_hour:02d}:{self._sched_minute:02d}")
+        self._sched_time_btn.bind(on_press=self._open_time_picker)
+        sched_box.add_widget(self._sched_toggle)
+        sched_box.add_widget(self._sched_time_btn)
+        self.add_widget(sched_box)
+
+        self.add_widget(self._spacer(4))
+
         # ── 예매 버튼 ──
         br = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(10))
         self.start_btn = PillButton("예매 시작", bg=(0.45, 0.20, 0.75, 1))
@@ -771,6 +1030,17 @@ class SRTWidget(BoxLayout):
         self._date = date_str
         self._hour = hour
         self._datetime_btn.text = f"{date_str}  {hour}:00"
+
+    def _open_time_picker(self, *_):
+        popup = TimePickerPopup(self._sched_date, self._sched_hour, self._sched_minute,
+                                self._on_time_selected)
+        popup.open()
+
+    def _on_time_selected(self, date_str, hour, minute):
+        self._sched_date   = date_str
+        self._sched_hour   = hour
+        self._sched_minute = minute
+        self._sched_time_btn.text = f"{date_str}  {hour:02d}:{minute:02d}"
 
     def _open_seat_picker(self, *_):
         SEATS = ["아무거나", "일반실", "특실"]
@@ -1053,6 +1323,9 @@ class SRTWidget(BoxLayout):
             PA = autoclass("org.kivy.android.PythonActivity")
             PM = autoclass("android.os.PowerManager")
             pm = PA.mActivity.getSystemService(PA.mActivity.POWER_SERVICE)
+            # 이미 보유 중이면 재획득 하지 않음 (WakeLock 누수 방지)
+            if self._wake_lock and self._wake_lock.isHeld():
+                return
             self._wake_lock = pm.newWakeLock(PM.PARTIAL_WAKE_LOCK, "SRTApp:WakeLock")
             self._wake_lock.acquire()
             self.log("🔒 WakeLock 획득 성공")
@@ -1071,23 +1344,6 @@ class SRTWidget(BoxLayout):
         except Exception as e:
             self.log(f"⚠ WifiLock 실패: {e}")
             self._wifi_lock = None
-        # 배터리 최적화 무시 요청
-        try:
-            from jnius import autoclass
-            PA       = autoclass("org.kivy.android.PythonActivity")
-            Settings = autoclass("android.provider.Settings")
-            Uri      = autoclass("android.net.Uri")
-            Intent   = autoclass("android.content.Intent")
-            ctx = PA.mActivity
-            pkg = ctx.getPackageName()
-            pm2 = ctx.getSystemService(ctx.POWER_SERVICE)
-            if not pm2.isIgnoringBatteryOptimizations(pkg):
-                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                intent.setData(Uri.parse(f"package:{pkg}"))
-                ctx.startActivity(intent)
-                self.log("⚡ 배터리 최적화 무시 요청")
-        except Exception as e:
-            self.log(f"⚠ 배터리 최적화 설정 실패: {e}")
 
     def _release_wake_lock(self):
         try:
@@ -1101,11 +1357,70 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
+    def _request_battery_opt(self):
+        """앱 시작 시 한 번만 배터리 최적화 무시 요청"""
+        try:
+            from jnius import autoclass
+            PA       = autoclass("org.kivy.android.PythonActivity")
+            Settings = autoclass("android.provider.Settings")
+            Uri      = autoclass("android.net.Uri")
+            Intent   = autoclass("android.content.Intent")
+            ctx = PA.mActivity
+            pkg = ctx.getPackageName()
+            pm  = ctx.getSystemService(ctx.POWER_SERVICE)
+            if not pm.isIgnoringBatteryOptimizations(pkg):
+                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.setData(Uri.parse(f"package:{pkg}"))
+                ctx.startActivity(intent)
+        except Exception:
+            pass
+
     # ── 예매 시작/중지 ───────────────────────────────────────
     def start(self):
         if self._selected_row is None:
             self.log("열차를 선택하세요."); return
         self._target_train = self._trains[self._selected_row.train_index]
+
+        if self._sched_toggle.state == "down":
+            hh  = self._sched_hour
+            mm  = self._sched_minute
+            now = datetime.now()
+            target = datetime.strptime(self._sched_date, "%Y-%m-%d").replace(
+                hour=hh, minute=mm, second=0, microsecond=0)
+            if target <= now:
+                self.log("⚠ 설정한 시간이 이미 지났습니다."); return
+            self.log(f"\n⏰ {target.strftime('%m/%d %H:%M')}에 예매 시작 예정")
+            self.start_btn.disabled = True
+            self.stop_btn.disabled  = False
+            # 화면 잠금 중에도 동작하도록 WakeLock 선점 후 별도 스레드에서 대기
+            self._acquire_wake_lock()
+            self._sched_cancel = threading.Event()
+            threading.Thread(
+                target=self._countdown_thread,
+                args=(target, self._sched_cancel),
+                daemon=True
+            ).start()
+        else:
+            self._do_start()
+
+    def _countdown_thread(self, target, cancel_event):
+        """화면 잠금 상태에서도 동작하는 스레드 기반 카운트다운"""
+        while not cancel_event.is_set():
+            remaining = (target - datetime.now()).total_seconds()
+            if remaining <= 0:
+                if not cancel_event.is_set():
+                    Clock.schedule_once(lambda dt: self._do_start(), 0)
+                return
+            h = int(remaining // 3600)
+            m = int((remaining % 3600) // 60)
+            s = int(remaining % 60)
+            if h > 0:
+                self.set_status(f"⏰ {h}시간 {m:02d}분 {s:02d}초 후 예매 시작")
+            else:
+                self.set_status(f"⏰ {m:02d}분 {s:02d}초 후 예매 시작")
+            time.sleep(1)
+
+    def _do_start(self):
         self.log(f"\n▶ {self._target_train.train_number}호 "
                  f"{self._target_train.dep_time[:2]}:{self._target_train.dep_time[2:4]} 예매 시작")
         self._running = True
@@ -1115,6 +1430,9 @@ class SRTWidget(BoxLayout):
         threading.Thread(target=self._reserve_loop, daemon=True).start()
 
     def stop(self):
+        if self._sched_cancel:
+            self._sched_cancel.set()
+            self._sched_cancel = None
         self._running = False
         self._release_wake_lock()
         self._stop_alarm()
@@ -1196,10 +1514,21 @@ class SRTWidget(BoxLayout):
                             stat_start[0] = time.time(); stat_count[0] = 0
                         do_log_100 = (cnt % 100 == 0)
 
+                    # 선택 좌석 기준으로 가용 여부 및 SeatType 결정
+                    if seat == "일반실":
+                        seat_ok   = target.general_seat_available()
+                        seat_type = SeatType.GENERAL_ONLY
+                    elif seat == "특실":
+                        seat_ok   = target.special_seat_available()
+                        seat_type = SeatType.SPECIAL_ONLY
+                    else:  # 아무거나
+                        seat_ok   = target.general_seat_available() or target.special_seat_available()
+                        seat_type = SeatType.GENERAL_FIRST
+
                     if target is None:
                         if do_log_100:
                             self.log(f"[{cnt}회] 조회 중...")
-                    elif not (target.general_seat_available() or target.special_seat_available()):
+                    elif not seat_ok:
                         if do_log_100:
                             self.log(f"[{cnt}회] 매진 중...")
                     else:
@@ -1207,9 +1536,7 @@ class SRTWidget(BoxLayout):
                             if reserved[0]:
                                 return   # 다른 스레드가 이미 예매 완료
                             reserved[0] = True
-                        special = (target.special_seat_available()
-                                   if seat == "아무거나" else (seat == "특실"))
-                        rsv = worker_srt.reserve(target, special_seat=special)
+                        rsv = worker_srt.reserve(target, special_seat=seat_type)
                         self.log(f"✅ 예매 성공! ({cnt}회)\n{rsv}")
                         # 자동 결제
                         card = self._load_card()
@@ -1353,34 +1680,18 @@ class SRTApp(App):
         from kivy.clock import Clock
         Window.clearcolor = BG
 
-        def _full_redraw(dt):
-            # Window 캔버스 갱신 (OpenGL 컨텍스트 복구 핵심)
+        def _trigger_resize(dt):
+            # on_resize 강제 디스패치 → Kivy가 프레임버퍼 완전 재구성
             try:
-                Window.canvas.ask_update()
+                Window.dispatch("on_resize", *Window.size)
             except Exception:
                 pass
-            # 루트(ScrollView) 포함 전체 위젯 트리 갱신
-            if self.root:
-                try:
-                    for w in self.root.walk():
-                        try:
-                            w.canvas.ask_update()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-            if self._widget:
-                try:
-                    self._widget.canvas.ask_update()
-                except Exception:
-                    pass
 
-        # OpenGL 컨텍스트 복구 타이밍이 불규칙해서 여러 번 시도
-        Clock.schedule_once(_full_redraw, 0)
-        Clock.schedule_once(_full_redraw, 0.3)
-        Clock.schedule_once(_full_redraw, 1.0)
-        Clock.schedule_once(_full_redraw, 2.5)
-        Clock.schedule_once(_full_redraw, 5.0)
+        # GL 컨텍스트 복구 타이밍이 불규칙하므로 여러 번 시도
+        Clock.schedule_once(_trigger_resize, 0.1)
+        Clock.schedule_once(_trigger_resize, 0.5)
+        Clock.schedule_once(_trigger_resize, 1.5)
+        Clock.schedule_once(_trigger_resize, 3.0)
 
         # 알람 끄기 버튼으로 복귀한 경우 자동 중지
         try:
