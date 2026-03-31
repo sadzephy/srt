@@ -1665,12 +1665,14 @@ class SRTApp(App):
         from kivy.core.window import Window
         Window.clearcolor = BG
         scroll = ScrollView(always_overscroll=False, effect_cls=ScrollEffect)
+        self._resuming = False
         self._widget = SRTWidget(size_hint_y=None)
         self._widget.bind(minimum_height=self._widget.setter("height"))
         scroll.add_widget(self._widget)
         return scroll
 
     def on_pause(self):
+        self._resuming = False
         if self._widget:
             self._widget._save_settings()
         return True
@@ -1679,20 +1681,18 @@ class SRTApp(App):
         from kivy.core.window import Window
         from kivy.clock import Clock
         Window.clearcolor = BG
-
-        _attempts = [0]
+        self._resuming = True
 
         def _trigger_resize(dt):
-            _attempts[0] += 1
+            if not self._resuming:
+                return False  # on_pause 호출됨 → 중단
             try:
                 Window.canvas.ask_update()
                 Window.dispatch("on_resize", *Window.size)
             except Exception:
                 pass
-            if _attempts[0] >= 30:  # 0.5초 간격 × 30회 = 15초
-                return False  # 인터벌 취소
 
-        # GL 컨텍스트 복구 타이밍이 불규칙하므로 15초간 반복 시도
+        # 화면이 완전히 복구될 때까지 0.5초 간격으로 계속 시도
         Clock.schedule_interval(_trigger_resize, 0.5)
 
         # 알람 끄기 버튼으로 복귀한 경우 자동 중지
