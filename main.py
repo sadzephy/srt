@@ -1190,12 +1190,19 @@ class SRTWidget(BoxLayout):
         self._alarm_popup = popup
         popup.open()
 
-    @mainthread
     def _notify(self, title: str, text: str):
+        """예매 완료 알림 — 워커 스레드에서 직접 호출 (잠금화면 즉시 동작)"""
+        # 1. 진동: 어느 스레드에서나 가능
         self._start_alarm()
+        # 2. Android 알림 + 화면 깨우기: thread-safe API 직접 호출
+        self._send_android_notification(title, text)
+        # 3. Kivy 오버레이: 메인 스레드 필요 (잠금해제 후 표시됨)
         self._show_alarm_overlay(title, text)
+
+    def _send_android_notification(self, title: str, text: str):
+        """Android 알림 전송 — 백그라운드 스레드에서도 동작 (잠금화면 포함)"""
         try:
-            from jnius import autoclass
+            from jnius import autoclass, PythonJavaClass, java_method
             PA            = autoclass("org.kivy.android.PythonActivity")
             NotifBuilder  = autoclass("android.app.Notification$Builder")
             NotifMgr      = autoclass("android.app.NotificationManager")
@@ -1205,7 +1212,7 @@ class SRTWidget(BoxLayout):
             PowerManager  = autoclass("android.os.PowerManager")
             ctx = PA.mActivity
 
-            # 화면 강제 켜기 (메인 스레드에서 실행해야 동작)
+            # 화면 강제 켜기 — ACQUIRE_CAUSES_WAKEUP 은 어느 스레드에서도 동작
             pm = ctx.getSystemService(ctx.POWER_SERVICE)
             wl = pm.newWakeLock(
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK |
@@ -1214,25 +1221,39 @@ class SRTWidget(BoxLayout):
                 "srt:alarm_screen")
             wl.acquire(60000)
 
-            # 잠금 화면 위에 Activity 표시 (API 27+)
+            # setShowWhenLocked / 윈도우 플래그는 Android UI 스레드 필요
+            # → runOnUiThread 로 전달
             try:
-                ctx.setShowWhenLocked(True)
-                ctx.setTurnScreenOn(True)
+                class _ShowWhenLockedRunnable(PythonJavaClass):
+                    __javainterfaces__ = ['java/lang/Runnable']
+                    __javacontext__ = 'app'
+
+                    def __init__(self, activity):
+                        self._ctx = activity
+                        super().__init__()
+
+                    @java_method('()V')
+                    def run(self):
+                        try:
+                            self._ctx.setShowWhenLocked(True)
+                            self._ctx.setTurnScreenOn(True)
+                        except Exception:
+                            pass
+                        try:
+                            WLP = autoclass("android.view.WindowManager$LayoutParams")
+                            self._ctx.getWindow().addFlags(
+                                WLP.FLAG_SHOW_WHEN_LOCKED |
+                                WLP.FLAG_TURN_SCREEN_ON   |
+                                WLP.FLAG_KEEP_SCREEN_ON
+                            )
+                        except Exception:
+                            pass
+
+                ctx.runOnUiThread(_ShowWhenLockedRunnable(ctx))
             except Exception:
                 pass
 
-            # 잠금 화면 위에 윈도우 표시 플래그 (구형 API 호환)
-            try:
-                WindowManager = autoclass("android.view.WindowManager$LayoutParams")
-                ctx.getWindow().addFlags(
-                    WindowManager.FLAG_SHOW_WHEN_LOCKED |
-                    WindowManager.FLAG_TURN_SCREEN_ON   |
-                    WindowManager.FLAG_KEEP_SCREEN_ON
-                )
-            except Exception:
-                pass
-
-            # 알림 채널
+            # 알림 채널 (thread-safe)
             ch_id = "srt_alarm"
             nm = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
             if nm.getNotificationChannel(ch_id) is None:
