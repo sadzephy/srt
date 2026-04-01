@@ -1948,14 +1948,9 @@ class SRTApp(App):
         Window.clearcolor = BG
         self._resuming = True
 
-        _attempts = [0]
-
         def _restore_gl(dt):
-            if not self._resuming:
-                return False
-            _attempts[0] += 1
+            # GL 컨텍스트 1회 복구 (인터벌 제거 — 메인 스레드 과부하 방지)
             try:
-                # GL 컨텍스트 완전 복구 (텍스처/VBO/셰이더 전체 재업로드)
                 from kivy.graphics.context import get_context
                 get_context().reload()
             except Exception:
@@ -1965,15 +1960,16 @@ class SRTApp(App):
                 Window.dispatch("on_resize", *Window.size)
             except Exception:
                 pass
-            if _attempts[0] >= 10:
-                return False  # 5초 후 중단 (0.5s × 10)
 
-        # GL 컨텍스트 복구될 때까지 0.5초 간격으로 최대 5초간 시도
-        Clock.schedule_interval(_restore_gl, 0.5)
+        Clock.schedule_once(_restore_gl, 0.3)
 
-        # 잠금 중 쌓인 로그 콜백 폭발 방지: 1초 후 로깅 재개
-        Clock.schedule_once(lambda dt: self._widget and
-                            setattr(self._widget, '_log_paused', False), 1.0)
+        # 잠금 해제 후 로그 박스 초기화 (오래된 로그 누적으로 UI 성능 저하 방지)
+        def _resume_log(dt):
+            if self._widget:
+                self._widget.log_box.text = "── 화면 잠금 해제 ──\n"
+                self._widget._log_paused = False
+
+        Clock.schedule_once(_resume_log, 0.5)
 
         # 알람 끄기 버튼으로 복귀한 경우 자동 중지
         try:
