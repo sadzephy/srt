@@ -1277,8 +1277,14 @@ class SRTWidget(BoxLayout):
             return
         self._log_mainthread(msg)
 
+    _LOG_MAX_LINES = 200
+
     @mainthread
     def _log_mainthread(self, msg: str):
+        lines = self.log_box.text.split("\n")
+        if len(lines) > self._LOG_MAX_LINES:
+            lines = lines[-self._LOG_MAX_LINES:]
+            self.log_box.text = "\n".join(lines) + "\n"
         self.log_box.text += msg + "\n"
         self.log_box.scroll_y = 0
 
