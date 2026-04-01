@@ -1574,6 +1574,28 @@ class SRTWidget(BoxLayout):
     def _on_train_select(self, btn):
         self._selected_row = btn
 
+    # ── 배터리 최적화 제외 요청 ──────────────────────────────
+    def _request_battery_exemption(self):
+        """Doze 모드에서 앱이 종료되지 않도록 배터리 최적화 제외 요청 (1회 승인으로 영구 적용)"""
+        try:
+            from jnius import autoclass
+            PA       = autoclass("org.kivy.android.PythonActivity")
+            Intent   = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            Uri      = autoclass("android.net.Uri")
+            ctx = PA.mActivity
+            pm  = ctx.getSystemService(ctx.POWER_SERVICE)
+            pkg = ctx.getPackageName()
+            if not pm.isIgnoringBatteryOptimizations(pkg):
+                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.setData(Uri.parse(f"package:{pkg}"))
+                ctx.startActivity(intent)
+                self.log("⚡ 배터리 최적화 제외 승인 요청")
+            else:
+                self.log("⚡ 배터리 최적화 제외 이미 적용됨")
+        except Exception as e:
+            self.log(f"⚠ 배터리 최적화 제외 요청 실패: {e}")
+
     # ── WakeLock ────────────────────────────────────────────
     def _acquire_wake_lock(self):
         try:
@@ -1687,6 +1709,7 @@ class SRTWidget(BoxLayout):
         self._running = True
         self.start_btn.disabled = True
         self.stop_btn.disabled  = False
+        self._request_battery_exemption()
         self._acquire_wake_lock()
         threading.Thread(target=lambda: self._show_booking_notification(detail),
                          daemon=True).start()
