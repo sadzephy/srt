@@ -1747,7 +1747,8 @@ class SRTWidget(BoxLayout):
         # 공유 카운터 / 예매 완료 플래그 / 뮤텍스
         lock             = threading.Lock()
         attempt_count    = [0]
-        soldout_count    = [0]
+        soldout_count    = [0]   # 매진
+        noseat_count     = [0]   # 잔여석없음
         reserved         = [False]
         stat_count       = [0]
         loop_start       = time.time()
@@ -1804,7 +1805,7 @@ class SRTWidget(BoxLayout):
                         if elapsed >= 1.0:
                             secs = int(time.time() - loop_start)
                             self.log(
-                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
+                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                         do_log_100 = (cnt % 100 == 0)
 
@@ -1824,7 +1825,11 @@ class SRTWidget(BoxLayout):
                             self.log(f"[{cnt}회] 조회 중...")
                     elif not seat_ok:
                         with lock:
-                            soldout_count[0] += 1
+                            states = (target.general_seat_state or "") + (target.special_seat_state or "")
+                            if "잔여석없음" in states:
+                                noseat_count[0] += 1
+                            else:
+                                soldout_count[0] += 1
                         if do_log_100:
                             self.log(f"[{cnt}회] 매진 중...")
                     else:
@@ -1869,7 +1874,7 @@ class SRTWidget(BoxLayout):
                         if elapsed >= 1.0:
                             secs = int(time.time() - loop_start)
                             self.log(
-                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
+                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_netfunnel_error(err):
                         self.log(f"[{cnt}] 대기열 진입 → 5초 후 재시도")
