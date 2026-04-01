@@ -849,6 +849,7 @@ class SRTWidget(BoxLayout):
         self._sched_cancel    = None
 
         self._log_paused      = False
+        self._lock_log_buffer = []
         self._history         = []
         self._dep = "수서"; self._arr = "부산"
         self._date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1265,9 +1266,14 @@ class SRTWidget(BoxLayout):
         return type("_S", (), {"text": self._seat_val})()
 
     # ── 유틸 ────────────────────────────────────────────────
+    _LOCK_LOG_KEYWORDS = ("예매 성공", "결제 성공", "결제 실패", "결제 오류",
+                          "재로그인 성공", "재로그인 실패", "예매 중지")
+
     def log(self, msg: str):
         # @mainthread 스케줄링 전에 체크 → 잠금 중 Clock 큐 누적 방지
         if self._log_paused:
+            if any(k in msg for k in self._LOCK_LOG_KEYWORDS):
+                self._lock_log_buffer.append(msg)
             return
         self._log_mainthread(msg)
 
@@ -1966,7 +1972,13 @@ class SRTApp(App):
         # 잠금 해제 후 로그 박스 초기화 (오래된 로그 누적으로 UI 성능 저하 방지)
         def _resume_log(dt):
             if self._widget:
-                self._widget.log_box.text = "── 화면 잠금 해제 ──\n"
+                buf = self._widget._lock_log_buffer
+                if buf:
+                    buffered = "\n".join(buf)
+                    self._widget.log_box.text = f"── 잠금 중 이벤트 ──\n{buffered}\n── 화면 잠금 해제 ──\n"
+                else:
+                    self._widget.log_box.text = "── 화면 잠금 해제 ──\n"
+                self._widget._lock_log_buffer = []
                 self._widget._log_paused = False
 
         Clock.schedule_once(_resume_log, 0.5)
