@@ -1938,7 +1938,8 @@ class SRTWidget(BoxLayout):
                                 pass
                             else:
                                 relogin_event.clear()
-                                self.log(f"[{cnt}] 세션 오류 → 전체 세션 재로그인")
+                                self.log(f"[{cnt}] 세션 오류: {err[:100]}")
+                                self.log(f"[{cnt}] 전체 세션 재로그인")
                                 try:
                                     for s in all_sessions:
                                         s.login(member_no, password)
