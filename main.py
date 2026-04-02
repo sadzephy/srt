@@ -896,7 +896,7 @@ class SRTWidget(BoxLayout):
                 "date":         self._date,
                 "hour":         self._hour,
                 "seat":         self._seat_val,
-                "rate":         self.rate.text,
+                # "rate":         self.rate.text,   # [비동기 전환 시 활성화]
                 "card_number":  self.card_number.text,
                 "card_pw":      self.card_pw.text,
                 "card_birth":   self.card_birth.text,
@@ -937,7 +937,7 @@ class SRTWidget(BoxLayout):
                 self._datetime_btn.text = f"{self._date}  {self._hour}:00"
             if d.get("seat"):
                 self._seat_val = d["seat"]; self._seat_btn.text = d["seat"]
-            if d.get("rate"):        self.rate.text         = d["rate"]
+            # if d.get("rate"):        self.rate.text         = d["rate"]   # [비동기 전환 시 활성화]
             if d.get("card_number"): self.card_number.text  = d["card_number"]
             if d.get("card_pw"):     self.card_pw.text      = d["card_pw"]
             if d.get("card_birth"):  self.card_birth.text   = d["card_birth"]
@@ -1113,13 +1113,14 @@ class SRTWidget(BoxLayout):
         self._seat_val = "아무거나"
         self._seat_btn = FieldBtn(self._seat_val)
         self._seat_btn.bind(on_press=self._open_seat_picker)
-        self.rate = TextInput(text="2.0", multiline=False, input_filter="float",
-                              font_size=dp(16), background_normal="",
-                              background_active="", background_color=(0,0,0,0),
-                              foreground_color=DARK,
-                              size_hint_y=None, height=dp(36))
+        # [비동기 전환 시 활성화] 동시 요청 수 입력 필드
+        # self.rate = TextInput(text="2.0", multiline=False, input_filter="float",
+        #                       font_size=dp(16), background_normal="",
+        #                       background_active="", background_color=(0,0,0,0),
+        #                       foreground_color=DARK,
+        #                       size_hint_y=None, height=dp(36))
         opt.add_widget(FieldCard("좌석", self._seat_btn))
-        opt.add_widget(FieldCard("동시 요청 수", self.rate))
+        # opt.add_widget(FieldCard("동시 요청 수", self.rate))
         self.add_widget(opt)
 
         self.add_widget(self._spacer(4))
@@ -1785,10 +1786,12 @@ class SRTWidget(BoxLayout):
         date_str, hh, time_val, sel_dt, end_dt = self._get_params()
         dep, arr, seat = self._dep, self._arr, self.seat.text
 
-        try:
-            n_workers = max(1, min(5, int(float(self.rate.text))))
-        except ValueError:
-            n_workers = 2
+        n_workers = 1  # 단일 세션 동기식 — 최대 속도는 네트워크 RTT에 의해 자연 결정
+        # [비동기 전환 시 활성화] 동시 요청 수 UI 입력값 사용
+        # try:
+        #     n_workers = max(1, min(5, int(float(self.rate.text))))
+        # except ValueError:
+        #     n_workers = 2
 
         # 공유 카운터 / 예매 완료 플래그 / 뮤텍스
         lock             = threading.Lock()
@@ -1809,17 +1812,18 @@ class SRTWidget(BoxLayout):
         last_relogin_t   = [0.0]                      # 마지막 재로그인 시각
         relogin_fail_cnt = [0]                        # 연속 재로그인 실패 횟수
         MAX_RELOGIN_FAIL = 10                         # N회 연속 실패 시 전체 중지
-        TARGET_RPS       = n_workers                  # 목표 초당 요청 수 = 동시 요청 수
-        slot_lock        = threading.Lock()           # 요청 슬롯 제어
-        next_slot_t      = [time.time()]              # 다음 요청 허용 시각
+        # [비동기 전환 시 활성화] 슬롯 기반 요청 속도 제한
+        # TARGET_RPS  = n_workers                     # 목표 초당 요청 수 = 동시 요청 수
+        # slot_lock   = threading.Lock()              # 요청 슬롯 제어
+        # next_slot_t = [time.time()]                 # 다음 요청 허용 시각
 
-        def _acquire_slot():
-            with slot_lock:
-                now  = time.time()
-                wait = next_slot_t[0] - now
-                if wait > 0:
-                    time.sleep(wait)
-                next_slot_t[0] = max(next_slot_t[0], time.time()) + 1.0 / TARGET_RPS
+        # def _acquire_slot():
+        #     with slot_lock:
+        #         now  = time.time()
+        #         wait = next_slot_t[0] - now
+        #         if wait > 0:
+        #             time.sleep(wait)
+        #         next_slot_t[0] = max(next_slot_t[0], time.time()) + 1.0 / TARGET_RPS
 
         # 로그인 정보로 각 스레드별 독립 SRT 세션 생성
         member_no = self.member_no.text.strip()
@@ -1837,7 +1841,7 @@ class SRTWidget(BoxLayout):
         def _worker(worker_srt):
             while self._running and not reserved[0]:
                 relogin_event.wait()  # 재로그인 중이면 완료될 때까지 요청 차단
-                _acquire_slot()
+                # _acquire_slot()   # [비동기 전환 시 활성화] 슬롯 기반 속도 제한
                 t0 = time.time()
                 try:
                     request_in_flight.set()
@@ -1956,7 +1960,7 @@ class SRTWidget(BoxLayout):
                                         s.login(member_no, password)
                                     relogin_fail_cnt[0] = 0
                                     last_relogin_t[0] = time.time()
-                                    next_slot_t[0] = time.time()  # 재로그인 후 슬롯 리셋 → 버스트 방지
+                                    # next_slot_t[0] = time.time()  # [비동기 전환 시 활성화] 재로그인 후 슬롯 리셋
                                     self.log("✅ 전체 세션 재로그인 성공")
                                 except Exception as le:
                                     # 화면 잠금 중 발생한 실패는 카운터 제외
@@ -2002,7 +2006,7 @@ class SRTWidget(BoxLayout):
                             for s in all_sessions:
                                 s.login(member_no, password)
                             last_relogin_t[0] = time.time()
-                            next_slot_t[0] = time.time()
+                            # next_slot_t[0] = time.time()  # [비동기 전환 시 활성화] 슬롯 리셋
                             self.log("✅ 선제 재로그인 성공")
                         except Exception as e:
                             self.log(f"❌ 선제 재로그인 실패: {e}")
