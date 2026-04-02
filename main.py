@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 import calendar as cal_module
 import threading
 import time
+import random
 from SRT import SRT
 from SRT.seat_type import SeatType
 
@@ -896,7 +897,7 @@ class SRTWidget(BoxLayout):
                 "date":         self._date,
                 "hour":         self._hour,
                 "seat":         self._seat_val,
-                        "rate":         self.rate.text,
+                        # "rate":         self.rate.text,   # [멀티워커 비활성화]
                 "card_number":  self.card_number.text,
                 "card_pw":      self.card_pw.text,
                 "card_birth":   self.card_birth.text,
@@ -937,7 +938,7 @@ class SRTWidget(BoxLayout):
                 self._datetime_btn.text = f"{self._date}  {self._hour}:00"
             if d.get("seat"):
                 self._seat_val = d["seat"]; self._seat_btn.text = d["seat"]
-            if d.get("rate"):        self.rate.text         = d["rate"]
+            # if d.get("rate"):        self.rate.text         = d["rate"]   # [멀티워커 비활성화]
             if d.get("card_number"): self.card_number.text  = d["card_number"]
             if d.get("card_pw"):     self.card_pw.text      = d["card_pw"]
             if d.get("card_birth"):  self.card_birth.text   = d["card_birth"]
@@ -1113,13 +1114,14 @@ class SRTWidget(BoxLayout):
         self._seat_val = "아무거나"
         self._seat_btn = FieldBtn(self._seat_val)
         self._seat_btn.bind(on_press=self._open_seat_picker)
-        self.rate = TextInput(text="3", multiline=False, input_filter="int",
-                              font_size=dp(16), background_normal="",
-                              background_active="", background_color=(0,0,0,0),
-                              foreground_color=DARK,
-                              size_hint_y=None, height=dp(36))
+        # [멀티워커 비활성화] 3워커 이상 시 로그인 횟수 제한으로 연쇄 차단 발생
+        # self.rate = TextInput(text="3", multiline=False, input_filter="int",
+        #                       font_size=dp(16), background_normal="",
+        #                       background_active="", background_color=(0,0,0,0),
+        #                       foreground_color=DARK,
+        #                       size_hint_y=None, height=dp(36))
         opt.add_widget(FieldCard("좌석", self._seat_btn))
-        opt.add_widget(FieldCard("동시 요청 수", self.rate))
+        # opt.add_widget(FieldCard("동시 요청 수", self.rate))
         self.add_widget(opt)
 
         self.add_widget(self._spacer(4))
@@ -1785,10 +1787,7 @@ class SRTWidget(BoxLayout):
         date_str, hh, time_val, sel_dt, end_dt = self._get_params()
         dep, arr, seat = self._dep, self._arr, self.seat.text
 
-        try:
-            n_workers = max(1, min(5, int(self.rate.text)))
-        except ValueError:
-            n_workers = 1
+        n_workers = 1  # [멀티워커 비활성화] 다수 워커 시 로그인 횟수 제한으로 연쇄 차단 발생
 
         # 공유 카운터 / 예매 완료 플래그 / 뮤텍스
         lock             = threading.Lock()
@@ -1935,6 +1934,8 @@ class SRTWidget(BoxLayout):
                                 f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | 오류 {error_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_ip_blocked_error(err):
+                        # 워커마다 랜덤 지연 → 동시 재로그인 연쇄 차단 방지
+                        time.sleep(random.uniform(0, 2))
                         self.log(f"[{cnt}] 세션 차단 감지 → 새 세션 생성")
                         try:
                             worker_srt = _make_srt()
