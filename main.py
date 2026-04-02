@@ -1805,6 +1805,7 @@ class SRTWidget(BoxLayout):
         relogin_lock     = threading.Lock()           # 재로그인은 한 스레드만 수행
         relogin_event    = threading.Event()          # 재로그인 완료 신호
         relogin_event.set()
+        request_in_flight = threading.Event()         # 워커 API 요청 진행 중 플래그
         last_relogin_t   = [0.0]                      # 마지막 재로그인 시각
         relogin_fail_cnt = [0]                        # 연속 재로그인 실패 횟수
         MAX_RELOGIN_FAIL = 10                         # N회 연속 실패 시 전체 중지
@@ -1839,8 +1840,12 @@ class SRTWidget(BoxLayout):
                 _acquire_slot()
                 t0 = time.time()
                 try:
-                    trains = worker_srt.search_train(
-                        dep, arr, date_str, time_val, available_only=False)
+                    request_in_flight.set()
+                    try:
+                        trains = worker_srt.search_train(
+                            dep, arr, date_str, time_val, available_only=False)
+                    finally:
+                        request_in_flight.clear()
                     target = next((t for t in trains
                                    if t.train_number == self._target_train.train_number), None)
                     ms = int((time.time() - t0) * 1000)
@@ -1988,6 +1993,9 @@ class SRTWidget(BoxLayout):
                     if time.time() - last_relogin_t[0] < 4.0:
                         pass  # 최근 재로그인 완료 → 스킵
                     else:
+                        # 진행 중인 API 요청이 완료될 때까지 대기 (동시 세션 방지)
+                        while request_in_flight.is_set():
+                            time.sleep(0.01)
                         relogin_event.clear()
                         try:
                             self.log("🔁 선제 재로그인 시작")
