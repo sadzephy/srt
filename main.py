@@ -1809,60 +1809,61 @@ class SRTWidget(BoxLayout):
                             stat_start[0] = time.time(); stat_count[0] = 0
                         do_log_100 = (cnt % 100 == 0)
 
-                    # 선택 좌석 기준으로 가용 여부 및 SeatType 결정
-                    if seat == "일반실":
-                        seat_ok   = target.general_seat_available()
-                        seat_type = SeatType.GENERAL_ONLY
-                    elif seat == "특실":
-                        seat_ok   = target.special_seat_available()
-                        seat_type = SeatType.SPECIAL_ONLY
-                    else:  # 아무거나
-                        seat_ok   = target.general_seat_available() or target.special_seat_available()
-                        seat_type = SeatType.SPECIAL_FIRST
-
                     if target is None:
                         if do_log_100:
                             self.log(f"[{cnt}회] 조회 중...")
-                    elif not seat_ok:
-                        with lock:
-                            states = (target.general_seat_state or "") + (target.special_seat_state or "")
-                            if "잔여석없음" in states:
-                                noseat_count[0] += 1
-                            else:
-                                soldout_count[0] += 1
-                        if do_log_100:
-                            self.log(f"[{cnt}회] 매진 중...")
                     else:
-                        with lock:
-                            if reserved[0]:
-                                return   # 다른 스레드가 이미 예매 완료
-                            reserved[0] = True
-                        rsv = worker_srt.reserve(target, special_seat=seat_type)
-                        self.log(f"✅ 예매 성공! ({cnt}회)\n{rsv}")
-                        # 자동 결제
-                        card = self._load_card()
-                        if all(card.get(k) for k in ("number", "password", "birth", "expire")):
-                            try:
-                                ok = worker_srt.pay_with_card(
-                                    rsv,
-                                    number=card["number"],
-                                    password=card["password"],
-                                    validation_number=card["birth"],
-                                    expire_date=card["expire"][2:]+card["expire"][:2],
-                                )
-                                self.log(f"💳 결제 {'성공!' if ok else '실패'}")
-                            except Exception as pe:
-                                self.log(f"💳 결제 오류: {pe}")
+                        # 선택 좌석 기준으로 가용 여부 및 SeatType 결정
+                        if seat == "일반실":
+                            seat_ok   = target.general_seat_available()
+                            seat_type = SeatType.GENERAL_ONLY
+                        elif seat == "특실":
+                            seat_ok   = target.special_seat_available()
+                            seat_type = SeatType.SPECIAL_ONLY
+                        else:  # 아무거나
+                            seat_ok   = target.general_seat_available() or target.special_seat_available()
+                            seat_type = SeatType.SPECIAL_FIRST
+
+                        if not seat_ok:
+                            with lock:
+                                states = (target.general_seat_state or "") + (target.special_seat_state or "")
+                                if "잔여석없음" in states:
+                                    noseat_count[0] += 1
+                                else:
+                                    soldout_count[0] += 1
+                            if do_log_100:
+                                self.log(f"[{cnt}회] 매진 중...")
                         else:
-                            self.log("💳 카드 미등록 - 앱에서 20분 내 수동 결제 필요")
-                        self.set_status("✅ 예매 완료!")
-                        dep_hm  = f"{target.dep_time[:2]}:{target.dep_time[2:4]}"
-                        detail  = f"{self._dep}→{self._arr}  {self._date}  {dep_hm}  {self._seat_val}"
-                        result  = f"열차 {target.train_number}호 예매 성공!"
-                        self._add_history("완료", detail, result)
-                        self._notify("🎉 SRT 예매 완료!", result)
-                        self._release_wake_lock()
-                        self.stop(_record=False); return
+                            with lock:
+                                if reserved[0]:
+                                    return   # 다른 스레드가 이미 예매 완료
+                                reserved[0] = True
+                            rsv = worker_srt.reserve(target, special_seat=seat_type)
+                            self.log(f"✅ 예매 성공! ({cnt}회)\n{rsv}")
+                            # 자동 결제
+                            card = self._load_card()
+                            if all(card.get(k) for k in ("number", "password", "birth", "expire")):
+                                try:
+                                    ok = worker_srt.pay_with_card(
+                                        rsv,
+                                        number=card["number"],
+                                        password=card["password"],
+                                        validation_number=card["birth"],
+                                        expire_date=card["expire"][2:]+card["expire"][:2],
+                                    )
+                                    self.log(f"💳 결제 {'성공!' if ok else '실패'}")
+                                except Exception as pe:
+                                    self.log(f"💳 결제 오류: {pe}")
+                            else:
+                                self.log("💳 카드 미등록 - 앱에서 20분 내 수동 결제 필요")
+                            self.set_status("✅ 예매 완료!")
+                            dep_hm  = f"{target.dep_time[:2]}:{target.dep_time[2:4]}"
+                            detail  = f"{self._dep}→{self._arr}  {self._date}  {dep_hm}  {self._seat_val}"
+                            result  = f"열차 {target.train_number}호 예매 성공!"
+                            self._add_history("완료", detail, result)
+                            self._notify("🎉 SRT 예매 완료!", result)
+                            self._release_wake_lock()
+                            self.stop(_record=False); return
 
                 except Exception as e:
                     err = str(e)
