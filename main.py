@@ -1777,7 +1777,7 @@ class SRTWidget(BoxLayout):
                     time.sleep(wait)
                 next_slot_t[0] = max(next_slot_t[0], time.time()) + 1.0 / TARGET_RPS
 
-        # 로그인 정보로 각 스레드별 독립 SRT 세션 생성
+        # 1회 로그인 후 모든 워커가 세션 공유 (중복 로그인 시 세션 충돌 방지)
         member_no = self.member_no.text.strip()
         password  = self.password.text.strip()
         def _make_srt():
@@ -1789,6 +1789,9 @@ class SRTWidget(BoxLayout):
                 return _orig(method, url, **kwargs)
             s._session.request = _req
             return s
+
+        shared_srt = _make_srt()
+        all_sessions.append(shared_srt)
 
         def _worker(worker_srt):
             while self._running and not reserved[0]:
@@ -1958,17 +1961,14 @@ class SRTWidget(BoxLayout):
                     return
                 time.sleep(RELOGIN_INTERVAL)
 
-        # n_workers 개 스레드 동시 실행
-        self.log(f"🔄 {n_workers}개 스레드 병렬 요청 시작")
+        # n_workers 개 스레드가 shared_srt 공유하여 동시 요청
+        self.log(f"🔄 {n_workers}개 스레드 공유 세션 요청 시작")
         workers = []
         for i in range(n_workers):
             try:
-                s = _make_srt()
-                all_sessions.append(s)
-                t = threading.Thread(target=_worker, args=(s,), daemon=True)
+                t = threading.Thread(target=_worker, args=(shared_srt,), daemon=True)
                 workers.append(t)
                 t.start()
-                time.sleep(0.1)   # 로그인 요청 분산
             except Exception as e:
                 self.log(f"스레드 {i+1} 생성 실패: {e}")
 
