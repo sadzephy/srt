@@ -1497,7 +1497,10 @@ class SRTWidget(BoxLayout):
 
     def _is_session_error(self, err: str) -> bool:
         return any(k in err for k in
-                   ["Blocked","blocked","Wrong Server","세션","session","timeout","Timeout"])
+                   ["Blocked","blocked","Wrong Server","세션","session"])
+
+    def _is_timeout_error(self, err: str) -> bool:
+        return any(k in err for k in ["timeout","Timeout","timed out","ReadTimeout","ConnectTimeout"])
 
     def _is_netfunnel_error(self, err: str) -> bool:
         return any(k in err for k in ["NetFunnel","netfunnel","대기"])
@@ -1885,6 +1888,8 @@ class SRTWidget(BoxLayout):
                     if self._is_netfunnel_error(err):
                         self.log(f"[{cnt}] 대기열 진입 → 5초 후 재시도")
                         time.sleep(5)
+                    elif self._is_timeout_error(err):
+                        pass  # 타임아웃은 세션 문제 아님 → 재로그인 없이 바로 재시도
                     elif self._is_session_error(err):
                         relogin_event.wait()          # 다른 스레드가 재로그인 중이면 대기
                         with relogin_lock:
