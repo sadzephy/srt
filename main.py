@@ -1749,6 +1749,7 @@ class SRTWidget(BoxLayout):
         attempt_count    = [0]
         soldout_count    = [0]   # 매진
         noseat_count     = [0]   # 잔여석없음
+        notfound_count   = [0]   # 열차 미조회 (target is None)
         reserved         = [False]
         stat_count       = [0]
         loop_start       = time.time()
@@ -1805,13 +1806,15 @@ class SRTWidget(BoxLayout):
                         if elapsed >= 1.0:
                             secs = int(time.time() - loop_start)
                             self.log(
-                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
+                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                         do_log_100 = (cnt % 100 == 0)
 
                     if target is None:
+                        with lock:
+                            notfound_count[0] += 1
                         if do_log_100:
-                            self.log(f"[{cnt}회] 조회 중...")
+                            self.log(f"[{cnt}회] 열차 {self._target_train.train_number}호 미조회")
                     else:
                         # 선택 좌석 기준으로 가용 여부 및 SeatType 결정
                         if seat == "일반실":
@@ -1875,7 +1878,7 @@ class SRTWidget(BoxLayout):
                         if elapsed >= 1.0:
                             secs = int(time.time() - loop_start)
                             self.log(
-                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
+                                f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_netfunnel_error(err):
                         self.log(f"[{cnt}] 대기열 진입 → 5초 후 재시도")
