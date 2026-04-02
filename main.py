@@ -896,7 +896,7 @@ class SRTWidget(BoxLayout):
                 "date":         self._date,
                 "hour":         self._hour,
                 "seat":         self._seat_val,
-                # "rate":         self.rate.text,   # [비동기 전환 시 활성화]
+                        "rate":         self.rate.text,
                 "card_number":  self.card_number.text,
                 "card_pw":      self.card_pw.text,
                 "card_birth":   self.card_birth.text,
@@ -937,7 +937,7 @@ class SRTWidget(BoxLayout):
                 self._datetime_btn.text = f"{self._date}  {self._hour}:00"
             if d.get("seat"):
                 self._seat_val = d["seat"]; self._seat_btn.text = d["seat"]
-            # if d.get("rate"):        self.rate.text         = d["rate"]   # [비동기 전환 시 활성화]
+            if d.get("rate"):        self.rate.text         = d["rate"]
             if d.get("card_number"): self.card_number.text  = d["card_number"]
             if d.get("card_pw"):     self.card_pw.text      = d["card_pw"]
             if d.get("card_birth"):  self.card_birth.text   = d["card_birth"]
@@ -1113,14 +1113,13 @@ class SRTWidget(BoxLayout):
         self._seat_val = "아무거나"
         self._seat_btn = FieldBtn(self._seat_val)
         self._seat_btn.bind(on_press=self._open_seat_picker)
-        # [비동기 전환 시 활성화] 동시 요청 수 입력 필드
-        # self.rate = TextInput(text="2.0", multiline=False, input_filter="float",
-        #                       font_size=dp(16), background_normal="",
-        #                       background_active="", background_color=(0,0,0,0),
-        #                       foreground_color=DARK,
-        #                       size_hint_y=None, height=dp(36))
+        self.rate = TextInput(text="3", multiline=False, input_filter="int",
+                              font_size=dp(16), background_normal="",
+                              background_active="", background_color=(0,0,0,0),
+                              foreground_color=DARK,
+                              size_hint_y=None, height=dp(36))
         opt.add_widget(FieldCard("좌석", self._seat_btn))
-        # opt.add_widget(FieldCard("동시 요청 수", self.rate))
+        opt.add_widget(FieldCard("동시 요청 수", self.rate))
         self.add_widget(opt)
 
         self.add_widget(self._spacer(4))
@@ -1786,12 +1785,10 @@ class SRTWidget(BoxLayout):
         date_str, hh, time_val, sel_dt, end_dt = self._get_params()
         dep, arr, seat = self._dep, self._arr, self.seat.text
 
-        n_workers = 1  # 단일 세션 동기식 — 최대 속도는 네트워크 RTT에 의해 자연 결정
-        # [비동기 전환 시 활성화] 동시 요청 수 UI 입력값 사용
-        # try:
-        #     n_workers = max(1, min(5, int(float(self.rate.text))))
-        # except ValueError:
-        #     n_workers = 2
+        try:
+            n_workers = max(1, min(5, int(self.rate.text)))
+        except ValueError:
+            n_workers = 1
 
         # 공유 카운터 / 예매 완료 플래그 / 뮤텍스
         lock             = threading.Lock()
@@ -1938,8 +1935,16 @@ class SRTWidget(BoxLayout):
                                 f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | 오류 {error_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_ip_blocked_error(err):
-                        self.log(f"[{cnt}] IP 차단 → 60초 대기 후 재시도")
-                        time.sleep(60)
+                        self.log(f"[{cnt}] 세션 차단 감지 → 새 세션 생성")
+                        try:
+                            worker_srt = _make_srt()
+                            with relogin_lock:
+                                all_sessions.clear()
+                                all_sessions.append(worker_srt)
+                                last_relogin_t[0] = time.time()
+                            self.log(f"[{cnt}] 새 세션 생성 완료")
+                        except Exception as se:
+                            self.log(f"[{cnt}] 새 세션 생성 실패: {se}")
                     elif self._is_netfunnel_error(err):
                         self.log(f"[{cnt}] 대기열 진입 → 5초 후 재시도")
                         time.sleep(5)
