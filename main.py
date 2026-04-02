@@ -850,6 +850,7 @@ class SRTWidget(BoxLayout):
 
         self._log_paused      = False
         self._lock_log_buffer = []
+        self._log_file        = None
         self._history         = []
         self._dep = "수서"; self._arr = "부산"
         self._date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1270,6 +1271,13 @@ class SRTWidget(BoxLayout):
                           "재로그인 성공", "재로그인 실패", "예매 중지")
 
     def log(self, msg: str):
+        # 파일 로그: 잠금 중에도 항상 기록
+        if self._log_file:
+            try:
+                ts = datetime.now().strftime("%H:%M:%S")
+                self._log_file.write(f"[{ts}] {msg}\n")
+            except Exception:
+                pass
         # @mainthread 스케줄링 전에 체크 → 잠금 중 Clock 큐 누적 방지
         if self._log_paused:
             if any(k in msg for k in self._LOCK_LOG_KEYWORDS):
@@ -1577,6 +1585,36 @@ class SRTWidget(BoxLayout):
     def _on_train_select(self, btn):
         self._selected_row = btn
 
+    # ── 파일 로그 ───────────────────────────────────────────
+    def _open_log_file(self):
+        try:
+            import os
+            try:
+                from jnius import autoclass
+                PA = autoclass("org.kivy.android.PythonActivity")
+                ext = PA.mActivity.getExternalFilesDir(None)
+                log_dir = ext.getAbsolutePath() if ext else ""
+            except Exception:
+                log_dir = ""
+            if not log_dir:
+                from kivy.app import App
+                log_dir = App.get_running_app().user_data_dir
+            os.makedirs(log_dir, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = os.path.join(log_dir, f"srt_log_{ts}.txt")
+            self._log_file = open(path, "w", encoding="utf-8", buffering=1)
+            self.log(f"📄 로그 파일: {path}")
+        except Exception as e:
+            self.log(f"⚠ 로그 파일 열기 실패: {e}")
+
+    def _close_log_file(self):
+        if self._log_file:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
+
     # ── 배터리 최적화 제외 요청 ──────────────────────────────
     def _request_battery_exemption(self):
         """Doze 모드에서 앱이 종료되지 않도록 배터리 최적화 제외 요청 (1회 승인으로 영구 적용)"""
@@ -1712,6 +1750,7 @@ class SRTWidget(BoxLayout):
         self._running = True
         self.start_btn.disabled = True
         self.stop_btn.disabled  = False
+        self._open_log_file()
         self._request_battery_exemption()
         self._acquire_wake_lock()
         threading.Thread(target=lambda: self._show_booking_notification(detail),
@@ -1724,6 +1763,7 @@ class SRTWidget(BoxLayout):
             self._sched_cancel = None
         was_running = self._running
         self._running = False
+        self._close_log_file()
         self._release_wake_lock()
         self._stop_alarm()
         self._dismiss_notify()
@@ -1777,7 +1817,7 @@ class SRTWidget(BoxLayout):
                     time.sleep(wait)
                 next_slot_t[0] = max(next_slot_t[0], time.time()) + 1.0 / TARGET_RPS
 
-        # 1회 로그인 후 모든 워커가 세션 공유 (중복 로그인 시 세션 충돌 방지)
+        # 로그인 정보로 각 스레드별 독립 SRT 세션 생성
         member_no = self.member_no.text.strip()
         password  = self.password.text.strip()
         def _make_srt():
@@ -1789,9 +1829,6 @@ class SRTWidget(BoxLayout):
                 return _orig(method, url, **kwargs)
             s._session.request = _req
             return s
-
-        shared_srt = _make_srt()
-        all_sessions.append(shared_srt)
 
         def _worker(worker_srt):
             while self._running and not reserved[0]:
@@ -1961,14 +1998,17 @@ class SRTWidget(BoxLayout):
                     return
                 time.sleep(RELOGIN_INTERVAL)
 
-        # n_workers 개 스레드가 shared_srt 공유하여 동시 요청
-        self.log(f"🔄 {n_workers}개 스레드 공유 세션 요청 시작")
+        # n_workers 개 스레드 동시 실행
+        self.log(f"🔄 {n_workers}개 스레드 병렬 요청 시작")
         workers = []
         for i in range(n_workers):
             try:
-                t = threading.Thread(target=_worker, args=(shared_srt,), daemon=True)
+                s = _make_srt()
+                all_sessions.append(s)
+                t = threading.Thread(target=_worker, args=(s,), daemon=True)
                 workers.append(t)
                 t.start()
+                time.sleep(0.1)   # 로그인 요청 분산
             except Exception as e:
                 self.log(f"스레드 {i+1} 생성 실패: {e}")
 
