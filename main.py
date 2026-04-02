@@ -1503,6 +1503,9 @@ class SRTWidget(BoxLayout):
             self._srt = SRT(self.member_no.text.strip(), self.password.text.strip())
             self.log("✅ 로그인 성공")
 
+    def _is_ip_blocked_error(self, err: str) -> bool:
+        return "abnormal access" in err or "IP Address Blocked" in err
+
     def _is_session_error(self, err: str) -> bool:
         return any(k in err for k in
                    ["Blocked","blocked","Wrong Server","세션","session"])
@@ -1925,7 +1928,10 @@ class SRTWidget(BoxLayout):
                             self.log(
                                 f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | 오류 {error_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
-                    if self._is_netfunnel_error(err):
+                    if self._is_ip_blocked_error(err):
+                        self.log(f"[{cnt}] IP 차단 → 60초 대기 후 재시도")
+                        time.sleep(60)
+                    elif self._is_netfunnel_error(err):
                         self.log(f"[{cnt}] 대기열 진입 → 5초 후 재시도")
                         time.sleep(5)
                     elif self._is_timeout_error(err):
