@@ -1782,7 +1782,7 @@ class SRTWidget(BoxLayout):
         relogin_event.set()
         request_in_flight = threading.Event()         # 워커 API 요청 진행 중 플래그
         last_relogin_t   = [0.0]                      # 마지막 재로그인 시각
-        block_first_t    = [0.0]                      # 첫 차단 발생 시각 (0=차단 없음)
+        consec_block     = [0]                        # 연속 차단 횟수
         relogin_fail_cnt = [0]                        # 연속 재로그인 실패 횟수
         MAX_RELOGIN_FAIL = 10                         # N회 연속 실패 시 전체 중지
         # [비동기 전환 시 활성화] 슬롯 기반 요청 속도 제한
@@ -1826,7 +1826,7 @@ class SRTWidget(BoxLayout):
                     target = next((t for t in trains
                                    if t.train_number == self._target_train.train_number), None)
                     ms = int((time.time() - t0) * 1000)
-                    block_first_t[0] = 0.0  # 정상 응답 → 차단 타이머 초기화
+                    consec_block[0] = 0  # 정상 응답 → 차단 카운터 초기화
 
                     with lock:
                         attempt_count[0] += 1
@@ -1912,41 +1912,31 @@ class SRTWidget(BoxLayout):
                                 f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | 오류 {error_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_ip_blocked_error(err):
-                        now = time.time()
-                        if block_first_t[0] == 0.0:
-                            block_first_t[0] = now
-                        elapsed = now - block_first_t[0]
-                        # 첫 차단 후 경과 시간 기준 재시도 간격
-                        if   elapsed <    30: wait =    5
-                        elif elapsed <   300: wait =   30
-                        elif elapsed <  1800: wait =  120
-                        elif elapsed < 10800: wait =  600
-                        elif elapsed < 21600: wait = 1800
-                        else:                 wait = 3600
-                        def _fmt(s):
-                            h, r = divmod(int(s), 3600)
-                            m, s = divmod(r, 60)
-                            return f"{h}시간 " * (h>0) + f"{m}분 " * (m>0) + f"{s}초" * (s>0 or (h==0 and m==0))
-                        self.log(
-                            f"[{cnt}] 세션 차단 (차단 후 {_fmt(elapsed)} 경과) "
-                            f"→ {_fmt(wait)} 대기 시작")
-                        # 1초 단위 대기 → 중지 시 즉시 탈출
+                        idx = consec_block[0]
+                        consec_block[0] += 1
+                        # 대기 스케줄 (분): 1 / 5 / 10 / 20 / 30 / 40 / ... / 180
+                        if   idx == 0: wait_m = 1
+                        elif idx == 1: wait_m = 5
+                        else:          wait_m = min((idx - 1) * 10, 180)
+                        wait = wait_m * 60
+                        def _fmt_m(m):
+                            return f"{m}분" if m < 60 else f"{m//60}시간" + (f" {m%60}분" if m%60 else "")
+                        self.log(f"[{cnt}] 세션 차단 ({consec_block[0]}회째) → {_fmt_m(wait_m)} 대기 시작")
                         for _w in range(wait):
                             if not self._running or reserved[0]:
                                 break
                             time.sleep(1)
                         if not self._running or reserved[0]:
                             break
-                        self.log(f"[{cnt}] {_fmt(wait)} 대기 종료 → 새 세션 생성 시도")
+                        self.log(f"[{cnt}] {_fmt_m(wait_m)} 대기 종료 → 새 세션 생성 시도")
                         try:
                             worker_srt = _make_srt()
                             with relogin_lock:
                                 all_sessions.clear()
                                 all_sessions.append(worker_srt)
                                 last_relogin_t[0] = time.time()
-                            total = time.time() - block_first_t[0]
-                            self.log(f"[{cnt}] 새 세션 생성 완료 (차단 해제, 총 {_fmt(total)} 소요)")
-                            block_first_t[0] = 0.0
+                            self.log(f"[{cnt}] 새 세션 생성 완료 (차단 해제)")
+                            consec_block[0] = 0
                         except Exception as se:
                             self.log(f"[{cnt}] 새 세션 생성 실패: {se}")
                     elif self._is_netfunnel_error(err):
