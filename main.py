@@ -746,7 +746,7 @@ class HistoryPopup(ModalView):
                            size=(dp(80), dp(36)),
                            background_normal="", background_color=(0.7, 0.2, 0.2, 1),
                            color=WHITE, font_size=dp(13), bold=True,
-                           font_name="NanumGothic")
+                           font_name="Roboto")
         def _clear(*_):
             self._on_clear()
             self.dismiss()
