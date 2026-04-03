@@ -1782,6 +1782,8 @@ class SRTWidget(BoxLayout):
         relogin_event.set()
         request_in_flight = threading.Event()         # 워커 API 요청 진행 중 플래그
         last_relogin_t   = [0.0]                      # 마지막 재로그인 시각
+        consec_block     = [0]                        # 연속 세션 차단 횟수 (backoff용)
+        block_total_wait = [0.0]                      # 연속 차단 누적 대기 시간(초)
         relogin_fail_cnt = [0]                        # 연속 재로그인 실패 횟수
         MAX_RELOGIN_FAIL = 10                         # N회 연속 실패 시 전체 중지
         # [비동기 전환 시 활성화] 슬롯 기반 요청 속도 제한
@@ -1825,6 +1827,7 @@ class SRTWidget(BoxLayout):
                     target = next((t for t in trains
                                    if t.train_number == self._target_train.train_number), None)
                     ms = int((time.time() - t0) * 1000)
+                    consec_block[0] = 0  # 정상 응답 → 연속 차단 카운터 초기화
 
                     with lock:
                         attempt_count[0] += 1
@@ -1910,16 +1913,25 @@ class SRTWidget(BoxLayout):
                                 f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | 오류 {error_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_ip_blocked_error(err):
-                        # 워커마다 랜덤 지연 → 동시 재로그인 연쇄 차단 방지
-                        time.sleep(random.uniform(0, 2))
-                        self.log(f"[{cnt}] 세션 차단 감지 → 새 세션 생성")
+                        consec_block[0] += 1
+                        # 지수 backoff: 5 / 10 / 20 / 40 / 80 / 160 / 300초(최대 5분)
+                        wait = min(5 * (2 ** (consec_block[0] - 1)), 300)
+                        block_total_wait[0] += wait
+                        self.log(
+                            f"[{cnt}] 세션 차단 (연속 {consec_block[0]}회) "
+                            f"→ {wait}초 대기 (누적 {int(block_total_wait[0])}초)")
+                        time.sleep(wait)
                         try:
                             worker_srt = _make_srt()
                             with relogin_lock:
                                 all_sessions.clear()
                                 all_sessions.append(worker_srt)
                                 last_relogin_t[0] = time.time()
-                            self.log(f"[{cnt}] 새 세션 생성 완료")
+                            self.log(
+                                f"[{cnt}] 새 세션 생성 완료 "
+                                f"(연속차단 {consec_block[0]}회 / 누적대기 {int(block_total_wait[0])}초 후 해제)")
+                            consec_block[0] = 0
+                            block_total_wait[0] = 0.0
                         except Exception as se:
                             self.log(f"[{cnt}] 새 세션 생성 실패: {se}")
                     elif self._is_netfunnel_error(err):
