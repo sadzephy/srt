@@ -288,7 +288,8 @@ class DateTimePickerPopup(ModalView):
         self._day   = d.day
         self._hour  = int(hour)
         self._callback = callback
-        self._day_btns = {}
+        self._day_btns  = {}
+        self._hour_btns = {}
         self._build()
 
     def _build(self):
@@ -325,20 +326,34 @@ class DateTimePickerPopup(ModalView):
         sep.bind(pos=lambda *_: None, size=lambda *_: None)
         outer.add_widget(sep)
 
-        # 시간 직접 입력
-        time_row = BoxLayout(size_hint_y=None, height=dp(60),
-                             padding=[dp(14), dp(8)], spacing=dp(8))
-        time_row.add_widget(lbl("⏰ 출발 시각 (0~23)", size=14, bold=True, color=DARK))
-        self._hour_input = TextInput(
-            text=f"{self._hour:02d}", multiline=False, input_filter="int",
-            font_size=dp(20), halign="center",
-            size_hint=(None, None), size=(dp(72), dp(44)),
-            background_color=WHITE, foreground_color=list(DARK),
-            cursor_color=list(PRIMARY), padding=[dp(8), dp(8)])
-        time_row.add_widget(self._hour_input)
-        time_row.add_widget(lbl("시 이후", size=14, color=DARK,
-                                size_hint=(None, 1), width=dp(52)))
-        outer.add_widget(time_row)
+        # 시간 선택
+        time_hdr = BoxLayout(size_hint_y=None, height=dp(36), padding=[dp(14),0])
+        time_hdr.add_widget(lbl("⏰ 시간선택", size=14, bold=True, color=DARK))
+        self._hour_lbl = lbl(f"{self._hour:02d}시 이후", size=14,
+                              bold=True, color=PRIMARY, halign="right")
+        time_hdr.add_widget(self._hour_lbl)
+        outer.add_widget(time_hdr)
+
+        hour_scroll = ScrollView(size_hint_y=None, height=dp(64))
+        hour_row = BoxLayout(size_hint_x=None, spacing=dp(6), padding=[dp(10),dp(8)])
+        hour_row.bind(minimum_width=hour_row.setter("width"))
+        self._hour_btns = {}
+        for h in range(24):
+            hb = ToggleButton(text=f"{h:02d}시", group="hours",
+                              size_hint=(None,None), size=(dp(64),dp(48)),
+                              background_normal="", background_down="",
+                              background_color=(0,0,0,0),
+                              color=DARK, font_size=dp(15), bold=True)
+            hb.hour = h
+            if h == self._hour:
+                hb.state = "down"
+            hb.bind(on_press=self._on_hour, pos=self._draw_hour_btn,
+                    size=self._draw_hour_btn, state=self._draw_hour_btn)
+            self._draw_hour_btn(hb)
+            hour_row.add_widget(hb)
+            self._hour_btns[h] = hb
+        hour_scroll.add_widget(hour_row)
+        outer.add_widget(hour_scroll)
 
         # 선택완료 버튼
         done = PillButton("선택완료", bg=PRIMARY, height=dp(60))
@@ -447,13 +462,26 @@ class DateTimePickerPopup(ModalView):
         self._year = y; self._month = m
         self._render_calendar()
 
+    def _draw_hour_btn(self, btn, *_):
+        btn.canvas.before.clear()
+        with btn.canvas.before:
+            if btn.state == "down":
+                Color(*PRIMARY)
+                btn.color = WHITE
+            else:
+                Color(*LIGHT_BG)
+                btn.color = DARK
+            RoundedRectangle(pos=btn.pos, size=btn.size, radius=[dp(12)])
+
+    def _on_hour(self, btn):
+        self._hour = btn.hour
+        self._hour_lbl.text = f"{self._hour:02d}시 이후"
+        for hb in self._hour_btns.values():
+            self._draw_hour_btn(hb)
+
     def _confirm(self, *_):
         date_str = f"{self._year}-{self._month:02d}-{self._day:02d}"
-        try:
-            h = max(0, min(23, int(self._hour_input.text or "0")))
-        except ValueError:
-            h = 0
-        self._callback(date_str, f"{h:02d}")
+        self._callback(date_str, f"{self._hour:02d}")
         self.dismiss()
 
 
@@ -467,10 +495,8 @@ class TimePickerPopup(ModalView):
         self._day     = d.day
         self._hour    = hour
         self._minute  = minute
-        self._callback  = callback
-        self._day_btns    = {}
-        self._hour_btns   = {}
-        self._minute_btns = {}
+        self._callback = callback
+        self._day_btns = {}
         self._build()
 
     def _build(self):
@@ -505,61 +531,27 @@ class TimePickerPopup(ModalView):
             Rectangle(pos=sep.pos, size=sep.size)
         outer.add_widget(sep)
 
-        # 시간 선택
-        hdr_h = BoxLayout(size_hint_y=None, height=dp(36), padding=[dp(14),0])
-        hdr_h.add_widget(lbl("⏰ 시간", size=14, bold=True, color=DARK))
-        self._hour_lbl = lbl(f"{self._hour:02d}시", size=14, bold=True,
-                              color=PRIMARY, halign="right")
-        hdr_h.add_widget(self._hour_lbl)
-        outer.add_widget(hdr_h)
-
-        hour_scroll = ScrollView(size_hint_y=None, height=dp(64))
-        hour_row = BoxLayout(size_hint_x=None, spacing=dp(6), padding=[dp(10),dp(8)])
-        hour_row.bind(minimum_width=hour_row.setter("width"))
-        for h in range(24):
-            hb = ToggleButton(text=f"{h:02d}", group="tp_hours",
-                              size_hint=(None,None), size=(dp(54),dp(48)),
-                              background_normal="", background_down="",
-                              background_color=(0,0,0,0),
-                              color=DARK, font_size=dp(15), bold=True)
-            hb.val = h
-            if h == self._hour:
-                hb.state = "down"
-            hb.bind(on_press=self._on_hour, pos=self._draw_hm_btn,
-                    size=self._draw_hm_btn, state=self._draw_hm_btn)
-            self._draw_hm_btn(hb)
-            hour_row.add_widget(hb)
-            self._hour_btns[h] = hb
-        hour_scroll.add_widget(hour_row)
-        outer.add_widget(hour_scroll)
-
-        # 분 선택
-        hdr_m = BoxLayout(size_hint_y=None, height=dp(36), padding=[dp(14),0])
-        hdr_m.add_widget(lbl("⏱ 분", size=14, bold=True, color=DARK))
-        self._minute_lbl = lbl(f"{self._minute:02d}분", size=14, bold=True,
-                                color=PRIMARY, halign="right")
-        hdr_m.add_widget(self._minute_lbl)
-        outer.add_widget(hdr_m)
-
-        min_scroll = ScrollView(size_hint_y=None, height=dp(64))
-        min_row = BoxLayout(size_hint_x=None, spacing=dp(6), padding=[dp(10),dp(8)])
-        min_row.bind(minimum_width=min_row.setter("width"))
-        for m in range(60):
-            mb = ToggleButton(text=f"{m:02d}", group="tp_minutes",
-                              size_hint=(None,None), size=(dp(54),dp(48)),
-                              background_normal="", background_down="",
-                              background_color=(0,0,0,0),
-                              color=DARK, font_size=dp(15), bold=True)
-            mb.val = m
-            if m == self._minute:
-                mb.state = "down"
-            mb.bind(on_press=self._on_minute, pos=self._draw_hm_btn,
-                    size=self._draw_hm_btn, state=self._draw_hm_btn)
-            self._draw_hm_btn(mb)
-            min_row.add_widget(mb)
-            self._minute_btns[m] = mb
-        min_scroll.add_widget(min_row)
-        outer.add_widget(min_scroll)
+        # 시간/분 직접 입력
+        hm_row = BoxLayout(size_hint_y=None, height=dp(64),
+                           padding=[dp(14), dp(10)], spacing=dp(8))
+        hm_row.add_widget(lbl("⏰ 시각", size=14, bold=True, color=DARK))
+        self._hour_input = TextInput(
+            text=f"{self._hour:02d}", multiline=False, input_filter="int",
+            font_size=dp(20), halign="center",
+            size_hint=(None, None), size=(dp(64), dp(44)),
+            background_color=WHITE, foreground_color=list(DARK),
+            cursor_color=list(PRIMARY), padding=[dp(8), dp(8)])
+        hm_row.add_widget(self._hour_input)
+        hm_row.add_widget(lbl("시", size=14, color=DARK, size_hint=(None,1), width=dp(20)))
+        self._minute_input = TextInput(
+            text=f"{self._minute:02d}", multiline=False, input_filter="int",
+            font_size=dp(20), halign="center",
+            size_hint=(None, None), size=(dp(64), dp(44)),
+            background_color=WHITE, foreground_color=list(DARK),
+            cursor_color=list(PRIMARY), padding=[dp(8), dp(8)])
+        hm_row.add_widget(self._minute_input)
+        hm_row.add_widget(lbl("분", size=14, color=DARK, size_hint=(None,1), width=dp(20)))
+        outer.add_widget(hm_row)
 
         done = PillButton("선택완료", bg=PRIMARY, height=dp(60))
         done.bind(on_press=self._confirm)
@@ -659,32 +651,17 @@ class TimePickerPopup(ModalView):
         self._year = y; self._month = m
         self._render_calendar()
 
-    def _draw_hm_btn(self, btn, *_):
-        btn.canvas.before.clear()
-        with btn.canvas.before:
-            if btn.state == "down":
-                Color(*PRIMARY)
-                btn.color = WHITE
-            else:
-                Color(*LIGHT_BG)
-                btn.color = DARK
-            RoundedRectangle(pos=btn.pos, size=btn.size, radius=[dp(12)])
-
-    def _on_hour(self, btn):
-        self._hour = btn.val
-        self._hour_lbl.text = f"{self._hour:02d}시"
-        for hb in self._hour_btns.values():
-            self._draw_hm_btn(hb)
-
-    def _on_minute(self, btn):
-        self._minute = btn.val
-        self._minute_lbl.text = f"{self._minute:02d}분"
-        for mb in self._minute_btns.values():
-            self._draw_hm_btn(mb)
-
     def _confirm(self, *_):
         date_str = f"{self._year}-{self._month:02d}-{self._day:02d}"
-        self._callback(date_str, self._hour, self._minute)
+        try:
+            h = max(0, min(23, int(self._hour_input.text or "0")))
+        except ValueError:
+            h = 0
+        try:
+            m = max(0, min(59, int(self._minute_input.text or "0")))
+        except ValueError:
+            m = 0
+        self._callback(date_str, h, m)
         self.dismiss()
 
 
