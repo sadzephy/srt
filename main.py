@@ -1161,10 +1161,15 @@ class SRTWidget(BoxLayout):
 
         log_card = RoundBox(orientation="vertical", radius=14, bg=WHITE,
                             size_hint_y=None, height=dp(300), padding=dp(10))
-        self.log_box = TextInput(readonly=True, multiline=True,
-                                 background_normal="", background_color=(0,0,0,0),
-                                 foreground_color=DARK, font_size=dp(13))
-        log_card.add_widget(self.log_box)
+        self.log_sv = ScrollView(always_overscroll=False, effect_cls=ScrollEffect,
+                                 do_scroll_x=False)
+        self.log_label = Label(text="", size_hint_y=None, halign="left", valign="top",
+                               font_size=dp(13), color=DARK, markup=False)
+        self.log_label.bind(
+            width=lambda inst, w: setattr(inst, "text_size", (w, None)),
+            texture_size=lambda inst, ts: setattr(inst, "height", ts[1]))
+        self.log_sv.add_widget(self.log_label)
+        log_card.add_widget(self.log_sv)
         self.add_widget(log_card)
 
     # ── 팝업 열기 ────────────────────────────────────────────
@@ -1262,12 +1267,12 @@ class SRTWidget(BoxLayout):
 
     @mainthread
     def _log_mainthread(self, msg: str):
-        lines = self.log_box.text.split("\n")
+        lines = self.log_label.text.split("\n")
         if len(lines) > self._LOG_MAX_LINES:
             lines = lines[-self._LOG_MAX_LINES:]
-            self.log_box.text = "\n".join(lines) + "\n"
-        self.log_box.text += msg + "\n"
-        self.log_box.scroll_y = 0
+            self.log_label.text = "\n".join(lines) + "\n"
+        self.log_label.text += msg + "\n"
+        self.log_sv.scroll_y = 0
 
     @mainthread
     def set_status(self, msg: str):
@@ -2059,9 +2064,9 @@ class SRTApp(App):
                 buf = self._widget._lock_log_buffer
                 if buf:
                     buffered = "\n".join(buf)
-                    self._widget.log_box.text = f"── 잠금 중 이벤트 ──\n{buffered}\n── 화면 잠금 해제 ──\n"
+                    self._widget.log_label.text = f"── 잠금 중 이벤트 ──\n{buffered}\n── 화면 잠금 해제 ──\n"
                 else:
-                    self._widget.log_box.text = "── 화면 잠금 해제 ──\n"
+                    self._widget.log_label.text = "── 화면 잠금 해제 ──\n"
                 self._widget._lock_log_buffer = []
                 self._widget._log_paused = False
 
