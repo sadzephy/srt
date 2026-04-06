@@ -1240,7 +1240,7 @@ class SRTWidget(BoxLayout):
             return
         self._log_mainthread(msg)
 
-    _LOG_MAX_LINES = 200
+    _LOG_MAX_LINES = 50
 
     @mainthread
     def _log_mainthread(self, msg: str):
