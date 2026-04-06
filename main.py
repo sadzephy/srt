@@ -1662,6 +1662,7 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
+    @mainthread
     def _start_keepalive_service(self):
         """예매 중 Foreground Service 시작 → OS의 프로세스 강제 종료 방지"""
         try:
@@ -1673,6 +1674,7 @@ class SRTWidget(BoxLayout):
         except Exception as e:
             self.log(f"⚠ 백그라운드 서비스 시작 실패: {e}")
 
+    @mainthread
     def _stop_keepalive_service(self):
         """예매 종료 시 Foreground Service 중단"""
         try:
@@ -1758,7 +1760,7 @@ class SRTWidget(BoxLayout):
         self._open_log_file()
         self._request_battery_exemption()
         self._acquire_wake_lock()
-        threading.Thread(target=self._start_keepalive_service, daemon=True).start()
+        self._start_keepalive_service()
         threading.Thread(target=lambda: self._show_booking_notification(detail),
                          daemon=True).start()
         threading.Thread(target=self._reserve_loop, daemon=True).start()
@@ -1774,7 +1776,7 @@ class SRTWidget(BoxLayout):
         self._stop_alarm()
         self._dismiss_notify()
         threading.Thread(target=self._cancel_booking_notification, daemon=True).start()
-        threading.Thread(target=self._stop_keepalive_service, daemon=True).start()
+        self._stop_keepalive_service()
         self.set_status("중지됨")
         self.start_btn.disabled = False
         self.stop_btn.disabled  = True
