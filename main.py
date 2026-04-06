@@ -1119,6 +1119,32 @@ class SRTWidget(BoxLayout):
 
         self.add_widget(self._spacer(4))
 
+        # ── 속도 모드 선택 ──
+        self.add_widget(lbl("호출 속도", size=12, color=GRAY1, bold=True,
+                            size_hint_y=None, height=dp(20)))
+        speed_box = RoundBox(orientation="horizontal", radius=12, bg=LIGHT_BG,
+                             size_hint_y=None, height=dp(48),
+                             padding=(dp(6), dp(6)), spacing=dp(6))
+        self._speed_stable_btn = ToggleButton(
+            text="안정 (1회/초)", group="speed", state="down",
+            background_normal="", background_down="",
+            color=PRIMARY, bold=True, font_size=dp(13),
+        )
+        self._speed_max_btn = ToggleButton(
+            text="최대속도", group="speed",
+            background_normal="", background_down="",
+            color=GRAY1, bold=True, font_size=dp(13),
+        )
+        def _on_speed(btn, state):
+            btn.color = PRIMARY if state == "down" else GRAY1
+        self._speed_stable_btn.bind(state=_on_speed)
+        self._speed_max_btn.bind(state=_on_speed)
+        speed_box.add_widget(self._speed_stable_btn)
+        speed_box.add_widget(self._speed_max_btn)
+        self.add_widget(speed_box)
+
+        self.add_widget(self._spacer(4))
+
         # ── 예매 버튼 ──
         br = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(10))
         self.start_btn = PillButton("예매 시작", bg=(0.45, 0.20, 0.75, 1))
@@ -1764,6 +1790,8 @@ class SRTWidget(BoxLayout):
         dep, arr, seat = self._dep, self._arr, self.seat.text
 
         n_workers = 1  # [멀티워커 비활성화] 다수 워커 시 로그인 횟수 제한으로 연쇄 차단 발생
+        stable_mode = (self._speed_stable_btn.state == "down")  # 안정 모드 여부
+        self.log(f"호출 속도: {'안정 (1회/초)' if stable_mode else '최대속도'}")
 
         # 공유 카운터 / 예매 완료 플래그 / 뮤텍스
         lock             = threading.Lock()
@@ -1983,6 +2011,12 @@ class SRTWidget(BoxLayout):
                     else:
                         if error_count[0] <= 3 or error_count[0] % 50 == 0:
                             self.log(f"[{cnt}] 오류({error_count[0]}회): {e}")
+
+                # 안정 모드: 요청 사이클이 최소 1초가 되도록 대기
+                if stable_mode:
+                    remain = 1.0 - (time.time() - t0)
+                    if remain > 0:
+                        time.sleep(remain)
 
                 if not self._running or reserved[0]:
                     return
