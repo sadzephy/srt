@@ -1636,6 +1636,27 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
+    def _start_keepalive_service(self):
+        """예매 중 Foreground Service 시작 → OS의 프로세스 강제 종료 방지"""
+        try:
+            from jnius import autoclass
+            service  = autoclass("org.srt.srtbooking.ServiceKeepalive")
+            mActivity = autoclass("org.kivy.android.PythonActivity").mActivity
+            service.start(mActivity, "")
+            self.log("🛡 백그라운드 서비스 시작 (OS 강제종료 방지)")
+        except Exception as e:
+            self.log(f"⚠ 백그라운드 서비스 시작 실패: {e}")
+
+    def _stop_keepalive_service(self):
+        """예매 종료 시 Foreground Service 중단"""
+        try:
+            from jnius import autoclass
+            service   = autoclass("org.srt.srtbooking.ServiceKeepalive")
+            mActivity = autoclass("org.kivy.android.PythonActivity").mActivity
+            service.stop(mActivity)
+        except Exception:
+            pass
+
     def _request_battery_opt(self):
         """앱 시작 시 한 번만 배터리 최적화 무시 요청"""
         try:
@@ -1711,6 +1732,7 @@ class SRTWidget(BoxLayout):
         self._open_log_file()
         self._request_battery_exemption()
         self._acquire_wake_lock()
+        threading.Thread(target=self._start_keepalive_service, daemon=True).start()
         threading.Thread(target=lambda: self._show_booking_notification(detail),
                          daemon=True).start()
         threading.Thread(target=self._reserve_loop, daemon=True).start()
@@ -1726,6 +1748,7 @@ class SRTWidget(BoxLayout):
         self._stop_alarm()
         self._dismiss_notify()
         threading.Thread(target=self._cancel_booking_notification, daemon=True).start()
+        threading.Thread(target=self._stop_keepalive_service, daemon=True).start()
         self.set_status("중지됨")
         self.start_btn.disabled = False
         self.stop_btn.disabled  = True

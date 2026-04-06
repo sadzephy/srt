@@ -18,6 +18,7 @@ orientation = portrait
 fullscreen = 0
 
 android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, ACCESS_WIFI_STATE, CHANGE_WIFI_STATE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, POST_NOTIFICATIONS, VIBRATE, ACCESS_NOTIFICATION_POLICY, USE_FULL_SCREEN_INTENT
+android.services = Keepalive:srt_service.py:foreground
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
