@@ -2024,7 +2024,7 @@ class SRTWidget(BoxLayout):
                     return
 
         # 선제적 재로그인 스케줄러 — 60초마다 세션 만료 전에 재로그인
-        RELOGIN_INTERVAL = 1200  # 세션 유효시간 20분+ 확인 → 20분 주기로 변경 (기존 60초)
+        RELOGIN_INTERVAL = 1800  # 세션 유효시간 30분+ 확인 → 30분 주기로 변경 (기존 60초)
 
         def _scheduled_relogin():
             time.sleep(3)  # 초기 대기 (워커 안정화)
