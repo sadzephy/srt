@@ -1912,6 +1912,7 @@ class SRTWidget(BoxLayout):
                                 f"[시도 {cnt}회 | 매진 {soldout_count[0]}회 | 잔여석없음 {noseat_count[0]}회 | 미조회 {notfound_count[0]}회 | 오류 {error_count[0]}회 | {stat_count[0]/elapsed:.1f}회/초 | {secs}초 경과]")
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_ip_blocked_error(err):
+                        self.log(f"[{cnt}] IP차단 에러: {err[:200]}")
                         idx = consec_block[0]
                         consec_block[0] += 1
                         # 대기 스케줄: 1s>2s>4s>10s>20s>40s>1분>5분>10분>20분>...>3시간
