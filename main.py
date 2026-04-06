@@ -1891,21 +1891,24 @@ class SRTWidget(BoxLayout):
                     if self._is_ip_blocked_error(err):
                         idx = consec_block[0]
                         consec_block[0] += 1
-                        # 대기 스케줄 (분): 1 / 5 / 10 / 20 / 30 / 40 / ... / 180
-                        if   idx == 0: wait_m = 1
-                        elif idx == 1: wait_m = 5
-                        else:          wait_m = min((idx - 1) * 10, 180)
-                        wait = wait_m * 60
-                        def _fmt_m(m):
-                            return f"{m}분" if m < 60 else f"{m//60}시간" + (f" {m%60}분" if m%60 else "")
-                        self.log(f"[{cnt}] 세션 차단 ({consec_block[0]}회째) → {_fmt_m(wait_m)} 대기 시작")
+                        # 대기 스케줄: 1s>2s>4s>10s>20s>40s>1분>5분>10분>20분>...>3시간
+                        _SCHED = [1, 2, 4, 10, 20, 40, 60, 300]
+                        if idx < len(_SCHED):
+                            wait = _SCHED[idx]
+                        else:
+                            wait = min((idx - len(_SCHED) + 1) * 600, 10800)
+                        def _fmt_s(s):
+                            if s < 60:   return f"{s}초"
+                            if s < 3600: return f"{s//60}분"
+                            return f"{s//3600}시간" + (f" {s%3600//60}분" if s%3600 else "")
+                        self.log(f"[{cnt}] 세션 차단 ({consec_block[0]}회째) → {_fmt_s(wait)} 대기 시작")
                         for _w in range(wait):
                             if not self._running or reserved[0]:
                                 break
                             time.sleep(1)
                         if not self._running or reserved[0]:
                             break
-                        self.log(f"[{cnt}] {_fmt_m(wait_m)} 대기 종료 → 새 세션 생성 시도")
+                        self.log(f"[{cnt}] {_fmt_s(wait)} 대기 종료 → 새 세션 생성 시도")
                         try:
                             worker_srt = _make_srt()
                             with relogin_lock:
