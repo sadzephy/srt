@@ -1757,6 +1757,7 @@ class SRTWidget(BoxLayout):
         self._running = True
         self.start_btn.disabled = True
         self.stop_btn.disabled  = False
+        self.set_status("🔄 예매 진행 중...")
         self._open_log_file()
         self._request_battery_exemption()
         self._acquire_wake_lock()
