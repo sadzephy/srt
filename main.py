@@ -1670,9 +1670,25 @@ class SRTWidget(BoxLayout):
             service  = autoclass("org.srt.srtbooking.ServiceKeepalive")
             mActivity = autoclass("org.kivy.android.PythonActivity").mActivity
             service.start(mActivity, "")
-            self.log("🛡 백그라운드 서비스 시작 (OS 강제종료 방지)")
+            self.log("🛡 백그라운드 서비스 시작 (별도 프로세스)")
         except Exception as e:
             self.log(f"⚠ 백그라운드 서비스 시작 실패: {e}")
+        # 메인 프로세스 포그라운드 서비스도 함께 시작
+        try:
+            from jnius import autoclass
+            PA      = autoclass("org.kivy.android.PythonActivity")
+            Intent  = autoclass("android.content.Intent")
+            SRTFg   = autoclass("org.srt.srtbooking.SRTForeground")
+            Build   = autoclass("android.os.Build")
+            ctx     = PA.mActivity
+            intent  = Intent(ctx, SRTFg)
+            if Build.VERSION.SDK_INT >= 26:
+                ctx.startForegroundService(intent)
+            else:
+                ctx.startService(intent)
+            self.log("🛡 메인 프로세스 포그라운드 보호 시작")
+        except Exception as e:
+            self.log(f"⚠ 메인 포그라운드 서비스 시작 실패: {e}")
 
     @mainthread
     def _stop_keepalive_service(self):
@@ -1682,6 +1698,17 @@ class SRTWidget(BoxLayout):
             service   = autoclass("org.srt.srtbooking.ServiceKeepalive")
             mActivity = autoclass("org.kivy.android.PythonActivity").mActivity
             service.stop(mActivity)
+        except Exception:
+            pass
+        try:
+            from jnius import autoclass
+            PA      = autoclass("org.kivy.android.PythonActivity")
+            Intent  = autoclass("android.content.Intent")
+            SRTFg   = autoclass("org.srt.srtbooking.SRTForeground")
+            ctx     = PA.mActivity
+            intent  = Intent(ctx, SRTFg)
+            intent.setAction("STOP")
+            ctx.startService(intent)
         except Exception:
             pass
 
