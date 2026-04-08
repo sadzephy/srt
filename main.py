@@ -1676,13 +1676,13 @@ class SRTWidget(BoxLayout):
         # 메인 프로세스 포그라운드 서비스도 함께 시작
         try:
             from jnius import autoclass
-            PA      = autoclass("org.kivy.android.PythonActivity")
-            Intent  = autoclass("android.content.Intent")
-            SRTFg   = autoclass("org.srt.srtbooking.SRTForeground")
-            Build   = autoclass("android.os.Build")
-            ctx     = PA.mActivity
-            intent  = Intent(ctx, SRTFg)
-            if Build.VERSION.SDK_INT >= 26:
+            PA           = autoclass("org.kivy.android.PythonActivity")
+            Intent       = autoclass("android.content.Intent")
+            SRTFg        = autoclass("org.srt.srtbooking.SRTForeground")
+            BuildVersion = autoclass("android.os.Build$VERSION")
+            ctx          = PA.mActivity
+            intent       = Intent(ctx, SRTFg)
+            if BuildVersion.SDK_INT >= 26:
                 ctx.startForegroundService(intent)
             else:
                 ctx.startService(intent)
