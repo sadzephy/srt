@@ -1314,8 +1314,9 @@ class SRTWidget(BoxLayout):
             pass
 
     def _notify(self, title: str, text: str):
-        """예매 완료 알림 — 진동 + Android 시스템 알림"""
+        """알림 — 진동 + 화면 켜기 + Android 시스템 알림"""
         self._start_alarm()
+        self._wake_screen()
         self._send_android_notification(title, text)
 
     def _show_booking_notification(self, detail: str):
@@ -1817,7 +1818,6 @@ class SRTWidget(BoxLayout):
         self._open_log_file()
         self._request_battery_exemption()
         self._acquire_wake_lock()
-        self._wake_screen()
         self._start_keepalive_service()
         threading.Thread(target=lambda: self._show_booking_notification(detail),
                          daemon=True).start()
