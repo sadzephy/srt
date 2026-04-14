@@ -1,7 +1,6 @@
 package org.srt.srtbooking;
 
 import android.app.Activity;
-import android.app.KeyguardManager;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -24,17 +23,14 @@ public class SRTAlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // ── 잠금화면 위 표시 ──────────────────────────────────
+        // ── 잠금화면 위에 표시 (잠금 해제 없이) ─────────────
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {   // API 27+
             setShowWhenLocked(true);
             setTurnScreenOn(true);
-            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            if (km != null) km.requestDismissKeyguard(this, null);
         } else {
             getWindow().addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED  |
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON    |
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD  |
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON   |
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
             );
         }

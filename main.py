@@ -1321,20 +1321,49 @@ class SRTWidget(BoxLayout):
 
     @mainthread
     def _show_alarm_popup(self, title: str, message: str, is_success: bool = True):
-        """전용 알람 팝업 — 잠금화면 위 전체화면으로 표시"""
+        """전용 알람 팝업 — Full-Screen Intent로 잠금화면 위 표시
+        화면 잠김: SRTAlarmActivity 전체화면 자동 표시
+        화면 켜짐: 헤드업 알림 → 탭 시 SRTAlarmActivity 표시"""
         try:
             from jnius import autoclass
-            PA         = autoclass("org.kivy.android.PythonActivity")
-            Intent     = autoclass("android.content.Intent")
-            SRTAlarm   = autoclass("org.srt.srtbooking.SRTAlarmActivity")
-            ctx        = PA.mActivity
-            intent     = Intent(ctx, SRTAlarm)
+            PA           = autoclass("org.kivy.android.PythonActivity")
+            Intent       = autoclass("android.content.Intent")
+            SRTAlarm     = autoclass("org.srt.srtbooking.SRTAlarmActivity")
+            PendingIntent= autoclass("android.app.PendingIntent")
+            NotifBuilder = autoclass("android.app.Notification$Builder")
+            NotifMgr     = autoclass("android.app.NotificationManager")
+            NotifCh      = autoclass("android.app.NotificationChannel")
+            BuildVersion = autoclass("android.os.Build$VERSION")
+            ctx = PA.mActivity
+
+            # 알람 Activity 인텐트
+            intent = Intent(ctx, SRTAlarm)
             intent.addFlags(0x10000000)   # FLAG_ACTIVITY_NEW_TASK
             intent.addFlags(0x20000000)   # FLAG_ACTIVITY_SINGLE_TOP
             intent.putExtra("title",      title)
             intent.putExtra("message",    message)
             intent.putExtra("is_success", is_success)
-            ctx.startActivity(intent)
+            pi = PendingIntent.getActivity(
+                ctx, 9002, intent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
+
+            # IMPORTANCE_HIGH 채널 (헤드업 알림 + 전체화면 허용)
+            ch_id = "srt_alarm_fs"
+            nm    = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
+            if BuildVersion.SDK_INT >= 26:
+                if nm.getNotificationChannel(ch_id) is None:
+                    ch = NotifCh(ch_id, "SRT 알람", NotifMgr.IMPORTANCE_HIGH)
+                    ch.enableVibration(False)   # 진동은 _start_alarm()이 담당
+                    nm.createNotificationChannel(ch)
+
+            notif = (NotifBuilder(ctx, ch_id)
+                     .setContentTitle(title)
+                     .setContentText(message)
+                     .setSmallIcon(ctx.getApplicationInfo().icon)
+                     .setFullScreenIntent(pi, True)   # 잠금화면 → 전체화면 자동 표시
+                     .setAutoCancel(True)
+                     .build())
+            nm.notify(9002, notif)
         except Exception as e:
             self.log(f"⚠ 알람 팝업 실패: {e}")
 
