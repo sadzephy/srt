@@ -1663,6 +1663,35 @@ class SRTWidget(BoxLayout):
             pass
 
     @mainthread
+    def _wake_screen(self):
+        """화면을 켜고 잠금화면 위에 앱을 표시 — 예매 시작 시 호출"""
+        try:
+            from jnius import autoclass
+            PA  = autoclass("org.kivy.android.PythonActivity")
+            PM  = autoclass("android.os.PowerManager")
+            ctx = PA.mActivity
+            pm  = ctx.getSystemService(ctx.POWER_SERVICE)
+            # 화면 켜기 (ACQUIRE_CAUSES_WAKEUP = 강제로 화면 ON)
+            wl = pm.newWakeLock(
+                PM.SCREEN_BRIGHT_WAKE_LOCK | PM.ACQUIRE_CAUSES_WAKEUP,
+                "SRTApp:ScreenWake")
+            wl.acquire(10000)  # 10초 후 자동 해제
+            wl.release()
+        except Exception:
+            pass
+        try:
+            from jnius import autoclass
+            PA  = autoclass("org.kivy.android.PythonActivity")
+            win = PA.mActivity.getWindow()
+            # 잠금화면 위에 표시 + 화면 켜기 플래그
+            FLAG_SHOW_WHEN_LOCKED = 0x00080000
+            FLAG_DISMISS_KEYGUARD = 0x00400000
+            FLAG_TURN_SCREEN_ON   = 0x00200000
+            win.addFlags(FLAG_SHOW_WHEN_LOCKED | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON)
+        except Exception:
+            pass
+
+    @mainthread
     def _start_keepalive_service(self):
         """예매 중 Foreground Service 시작 → OS의 프로세스 강제 종료 방지"""
         try:
@@ -1788,6 +1817,7 @@ class SRTWidget(BoxLayout):
         self._open_log_file()
         self._request_battery_exemption()
         self._acquire_wake_lock()
+        self._wake_screen()
         self._start_keepalive_service()
         threading.Thread(target=lambda: self._show_booking_notification(detail),
                          daemon=True).start()
