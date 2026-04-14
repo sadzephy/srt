@@ -1843,6 +1843,35 @@ class SRTWidget(BoxLayout):
         consec_block     = [0]                        # 연속 차단 횟수
         relogin_fail_cnt = [0]                        # 연속 재로그인 실패 횟수
         MAX_RELOGIN_FAIL = 10                         # N회 연속 실패 시 전체 중지
+        ip_block_log     = []   # (timestamp, is_ip_block) — 슬라이딩 윈도우
+        ip_block_alerted = [False]
+        IP_BLOCK_WINDOW  = 120  # 2분 윈도우
+        IP_BLOCK_RATIO   = 0.5  # 50% 임계값
+        IP_BLOCK_MIN     = 10   # 최소 샘플 수 (오탐 방지)
+
+        def _record_attempt(is_blocked: bool):
+            """시도 결과 기록 및 IP 차단 비율 체크"""
+            if ip_block_alerted[0]:
+                return
+            now = time.time()
+            ip_block_log.append((now, is_blocked))
+            # 2분 이전 항목 제거
+            cutoff = now - IP_BLOCK_WINDOW
+            while ip_block_log and ip_block_log[0][0] < cutoff:
+                ip_block_log.pop(0)
+            n_total   = len(ip_block_log)
+            if n_total < IP_BLOCK_MIN:
+                return
+            n_blocked = sum(1 for _, b in ip_block_log if b)
+            if n_blocked / n_total > IP_BLOCK_RATIO:
+                ip_block_alerted[0] = True
+                pct = int(n_blocked / n_total * 100)
+                msg = (f"⛔ IP 차단 감지: 최근 2분 내 {n_blocked}/{n_total}회({pct}%) 차단\n"
+                       f"비행기 모드 ON→OFF 후 앱을 재시작하세요")
+                self.log(msg)
+                self._notify("⛔ IP 차단 감지", "비행기 모드 ON→OFF 후 앱 재시작")
+                self._running = False
+                Clock.schedule_once(lambda dt: self.stop(), 0)
         # [비동기 전환 시 활성화] 슬롯 기반 요청 속도 제한
         # TARGET_RPS  = n_workers                     # 목표 초당 요청 수 = 동시 요청 수
         # slot_lock   = threading.Lock()              # 요청 슬롯 제어
@@ -1885,6 +1914,7 @@ class SRTWidget(BoxLayout):
                                    if t.train_number == self._target_train.train_number), None)
                     ms = int((time.time() - t0) * 1000)
                     consec_block[0] = 0  # 정상 응답 → 차단 카운터 초기화
+                    _record_attempt(False)
 
                     with lock:
                         attempt_count[0] += 1
@@ -1979,6 +2009,7 @@ class SRTWidget(BoxLayout):
                             stat_start[0] = time.time(); stat_count[0] = 0
                     if self._is_ip_blocked_error(err):
                         self.log(f"[{cnt}] IP차단 에러: {err[:200]}")
+                        _record_attempt(True)
                         idx = consec_block[0]
                         consec_block[0] += 1
                         # 대기 스케줄: 1s>2s>4s>10s>20s>40s>1분>5분>10분>20분>...>3시간
