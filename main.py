@@ -1313,11 +1313,30 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
-    def _notify(self, title: str, text: str):
-        """알림 — 진동 + 화면 켜기 + Android 시스템 알림"""
+    def _notify(self, title: str, text: str, is_success: bool = True):
+        """알림 — 진동 + 전용 팝업 + Android 시스템 알림"""
         self._start_alarm()
-        self._wake_screen()
+        self._show_alarm_popup(title, text, is_success)
         self._send_android_notification(title, text)
+
+    @mainthread
+    def _show_alarm_popup(self, title: str, message: str, is_success: bool = True):
+        """전용 알람 팝업 — 잠금화면 위 전체화면으로 표시"""
+        try:
+            from jnius import autoclass
+            PA         = autoclass("org.kivy.android.PythonActivity")
+            Intent     = autoclass("android.content.Intent")
+            SRTAlarm   = autoclass("org.srt.srtbooking.SRTAlarmActivity")
+            ctx        = PA.mActivity
+            intent     = Intent(ctx, SRTAlarm)
+            intent.addFlags(0x10000000)   # FLAG_ACTIVITY_NEW_TASK
+            intent.addFlags(0x20000000)   # FLAG_ACTIVITY_SINGLE_TOP
+            intent.putExtra("title",      title)
+            intent.putExtra("message",    message)
+            intent.putExtra("is_success", is_success)
+            ctx.startActivity(intent)
+        except Exception as e:
+            self.log(f"⚠ 알람 팝업 실패: {e}")
 
     def _show_booking_notification(self, detail: str):
         """예매 진행 중 지속 알림 — 상태바에 표시하여 OS가 프로세스를 종료하지 않도록 유도"""
@@ -1899,7 +1918,7 @@ class SRTWidget(BoxLayout):
                 msg = (f"⛔ IP 차단 감지: 최근 2분 내 {n_blocked}/{n_total}회({pct}%) 차단\n"
                        f"비행기 모드 ON→OFF 후 앱을 재시작하세요")
                 self.log(msg)
-                self._notify("⛔ IP 차단 감지", "비행기 모드 ON→OFF 후 앱 재시작")
+                self._notify("⛔ IP 차단 감지", "비행기 모드 ON→OFF 후 앱 재시작", is_success=False)
                 self._running = False
                 Clock.schedule_once(lambda dt: self.stop(), 0)
         # [비동기 전환 시 활성화] 슬롯 기반 요청 속도 제한
