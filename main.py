@@ -1314,8 +1314,9 @@ class SRTWidget(BoxLayout):
             pass
 
     def _notify(self, title: str, text: str, is_success: bool = True):
-        """알림 — 진동 + 전용 팝업 + Android 시스템 알림"""
+        """알림 — 진동 + 화면 켜기 + 전용 팝업 + Android 시스템 알림"""
         self._start_alarm()
+        self._wake_screen()
         self._show_alarm_popup(title, text, is_success)
         self._send_android_notification(title, text)
 
@@ -1734,30 +1735,17 @@ class SRTWidget(BoxLayout):
 
     @mainthread
     def _wake_screen(self):
-        """화면을 켜고 잠금화면 위에 앱을 표시 — 예매 시작 시 호출"""
+        """화면을 켜기 — release() 없이 10초 자동만료로 실제로 화면이 켜진 상태 유지"""
         try:
             from jnius import autoclass
             PA  = autoclass("org.kivy.android.PythonActivity")
             PM  = autoclass("android.os.PowerManager")
             ctx = PA.mActivity
             pm  = ctx.getSystemService(ctx.POWER_SERVICE)
-            # 화면 켜기 (ACQUIRE_CAUSES_WAKEUP = 강제로 화면 ON)
-            wl = pm.newWakeLock(
+            wl  = pm.newWakeLock(
                 PM.SCREEN_BRIGHT_WAKE_LOCK | PM.ACQUIRE_CAUSES_WAKEUP,
                 "SRTApp:ScreenWake")
-            wl.acquire(10000)  # 10초 후 자동 해제
-            wl.release()
-        except Exception:
-            pass
-        try:
-            from jnius import autoclass
-            PA  = autoclass("org.kivy.android.PythonActivity")
-            win = PA.mActivity.getWindow()
-            # 잠금화면 위에 표시 + 화면 켜기 플래그
-            FLAG_SHOW_WHEN_LOCKED = 0x00080000
-            FLAG_DISMISS_KEYGUARD = 0x00400000
-            FLAG_TURN_SCREEN_ON   = 0x00200000
-            win.addFlags(FLAG_SHOW_WHEN_LOCKED | FLAG_DISMISS_KEYGUARD | FLAG_TURN_SCREEN_ON)
+            wl.acquire(10000)  # 10초 후 자동 해제 (release() 즉시 호출 없음)
         except Exception:
             pass
 

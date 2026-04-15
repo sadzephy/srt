@@ -5,6 +5,8 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -94,13 +96,21 @@ public class SRTOverlay {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        sView = root;
-        try {
-            sWm.addView(sView, lp);
-        } catch (Exception e) {
-            sView = null;
-            sWm   = null;
-        }
+        final View finalView   = root;
+        final WindowManager.LayoutParams finalLp = lp;
+        sView = finalView;
+
+        // addView()는 반드시 Android UI 스레드에서 실행
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override public void run() {
+                try {
+                    sWm.addView(finalView, finalLp);
+                } catch (Exception e) {
+                    sView = null;
+                    sWm   = null;
+                }
+            }
+        });
     }
 
     public static synchronized void dismiss() {
