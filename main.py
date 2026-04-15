@@ -1330,9 +1330,10 @@ class SRTWidget(BoxLayout):
             ctx      = PA.mActivity
 
             if Settings.canDrawOverlays(ctx):
-                # 권한 있음 → WindowManager 오버레이 직접 표시
+                # 권한 있음 → 오버레이 + 알림 뱃지 둘 다 표시
                 SRTOverlay = autoclass("org.srt.srtbooking.SRTOverlay")
                 SRTOverlay.show(ctx, title, message, is_success)
+                self._show_fullscreen_notif(title, message, is_success)
             else:
                 # 권한 없음 → 설정 안내 (1회) + 알림 fallback
                 self.log("⚠ '다른 앱 위에 표시' 권한 필요 → 설정에서 허용하면 잠금화면 팝업 사용 가능")
