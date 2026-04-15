@@ -1,6 +1,8 @@
 package org.srt.srtbooking;
 
 import android.app.Activity;
+import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -98,6 +100,16 @@ public class SRTAlarmActivity extends Activity {
         root.addView(btnOk);
 
         setContentView(root);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // 오버레이 정리 + 알림 배지 제거
+        SRTOverlay.dismiss();
+        NotificationManager nm =
+            (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancel(9002);
     }
 
     @Override

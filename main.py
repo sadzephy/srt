@@ -1353,7 +1353,7 @@ class SRTWidget(BoxLayout):
 
     @mainthread
     def _show_fullscreen_notif(self, title: str, message: str, is_success: bool = True):
-        """알람 fallback — Full-Screen Intent 알림 (권한 없거나 오류 시)"""
+        """Full-Screen Intent 알림 — 잠금화면 위 SRTAlarmActivity 실행"""
         try:
             from jnius import autoclass
             PA           = autoclass("org.kivy.android.PythonActivity")
@@ -1363,8 +1363,21 @@ class SRTWidget(BoxLayout):
             NotifBuilder = autoclass("android.app.Notification$Builder")
             NotifMgr     = autoclass("android.app.NotificationManager")
             NotifCh      = autoclass("android.app.NotificationChannel")
+            Notification = autoclass("android.app.Notification")
             BuildVersion = autoclass("android.os.Build$VERSION")
             ctx = PA.mActivity
+            nm  = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
+
+            # Android 14+: USE_FULL_SCREEN_INTENT 권한 명시적 허가 필요
+            if BuildVersion.SDK_INT >= 34:
+                if not nm.canUseFullScreenIntent():
+                    self.log("⚠ Android 14+: '전체화면 알림' 권한 필요 → 설정에서 허용 후 재시작")
+                    Uri = autoclass("android.net.Uri")
+                    si  = Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT")
+                    si.setData(Uri.parse(f"package:{ctx.getPackageName()}"))
+                    si.addFlags(0x10000000)
+                    ctx.startActivity(si)
+
             intent = Intent(ctx, SRTAlarm)
             intent.addFlags(0x10000000)
             intent.putExtra("title",      title)
@@ -1373,23 +1386,29 @@ class SRTWidget(BoxLayout):
             pi = PendingIntent.getActivity(
                 ctx, 9002, intent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
-            ch_id = "srt_alarm_fs"
-            nm    = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
+
+            # 새 채널 ID — 기존 채널이 VISIBILITY_PUBLIC 없이 생성됐을 수 있으므로 새로 생성
+            ch_id = "srt_alarm_v2"
             if BuildVersion.SDK_INT >= 26:
                 if nm.getNotificationChannel(ch_id) is None:
                     ch = NotifCh(ch_id, "SRT 알람", NotifMgr.IMPORTANCE_HIGH)
                     ch.enableVibration(False)
+                    ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC)
+                    ch.setBypassDnd(True)
                     nm.createNotificationChannel(ch)
-            notif = (NotifBuilder(ctx, ch_id)
-                     .setContentTitle(title)
-                     .setContentText(message)
-                     .setSmallIcon(ctx.getApplicationInfo().icon)
-                     .setFullScreenIntent(pi, True)
-                     .setAutoCancel(True)
-                     .build())
-            nm.notify(9002, notif)
-        except Exception:
-            pass
+
+            builder = (NotifBuilder(ctx, ch_id)
+                       .setContentTitle(title)
+                       .setContentText(message)
+                       .setSmallIcon(ctx.getApplicationInfo().icon)
+                       .setFullScreenIntent(pi, True)
+                       .setAutoCancel(True)
+                       .setCategory(Notification.CATEGORY_ALARM))
+            if BuildVersion.SDK_INT < 26:
+                builder = builder.setPriority(Notification.PRIORITY_MAX)
+            nm.notify(9002, builder.build())
+        except Exception as e:
+            self.log(f"⚠ fullscreen 알림 실패: {e}")
 
     def _show_booking_notification(self, detail: str):
         """예매 진행 중 지속 알림 — 상태바에 표시하여 OS가 프로세스를 종료하지 않도록 유도"""
