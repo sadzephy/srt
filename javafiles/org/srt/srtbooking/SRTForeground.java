@@ -15,7 +15,7 @@ import android.os.IBinder;
  * startForeground() 호출로 메인 프로세스가 OS에 의해 강제 종료되지 않도록 보호.
  */
 public class SRTForeground extends Service {
-    static final String CHANNEL_ID = "srt_main_fg";
+    static final String CHANNEL_ID = "srt_main_fg_v2";
     static final int   NOTIF_ID   = 9001;
     static final String ACTION_STOP = "STOP";
 
@@ -33,7 +33,7 @@ public class SRTForeground extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
                 NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "SRT 예매", NotificationManager.IMPORTANCE_LOW);
+                    CHANNEL_ID, "SRT 예매", NotificationManager.IMPORTANCE_MIN);
                 ch.setDescription("예매 진행 중 백그라운드 보호");
                 nm.createNotificationChannel(ch);
             }

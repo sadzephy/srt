@@ -1314,13 +1314,11 @@ class SRTWidget(BoxLayout):
             pass
 
     def _notify(self, title: str, text: str, is_success: bool = True):
-        """알림 — 진동 + 팝업 + Android 시스템 알림
+        """알림 — 진동 + 팝업(잠금화면 포함)
         화면 OFF+잠김: full-screen intent → SRTAlarmActivity가 화면 켜고 잠금화면 위 표시
-        화면 ON:       SRTOverlay 오버레이 표시
-        _wake_screen() 미호출 — 먼저 켜면 full-screen intent가 heads-up으로 다운그레이드됨"""
+        화면 ON:       SRTOverlay 오버레이 표시"""
         self._start_alarm()
         self._show_alarm_popup(title, text, is_success)
-        self._send_android_notification(title, text)
 
     @mainthread
     def _show_alarm_popup(self, title: str, message: str, is_success: bool = True):
