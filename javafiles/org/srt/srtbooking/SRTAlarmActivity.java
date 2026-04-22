@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -21,9 +22,18 @@ import android.widget.TextView;
  */
 public class SRTAlarmActivity extends Activity {
 
+    private PowerManager.WakeLock mWakeLock;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // ── 화면 강제 점등 (잠금화면 상태에서 full-screen intent로 실행될 때) ──
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        mWakeLock = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "srt:alarm_wake");
+        mWakeLock.acquire(30000);   // 최대 30초, onDestroy에서 해제
 
         // ── 잠금화면 위에 표시 (잠금 해제 없이) ─────────────
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {   // API 27+
@@ -105,6 +115,8 @@ public class SRTAlarmActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // WakeLock 해제
+        if (mWakeLock != null && mWakeLock.isHeld()) mWakeLock.release();
         // 오버레이 정리 + 알림 배지 제거
         SRTOverlay.dismiss();
         NotificationManager nm =
