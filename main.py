@@ -1348,7 +1348,10 @@ class SRTWidget(BoxLayout):
             from jnius import autoclass
             PA           = autoclass("org.kivy.android.PythonActivity")
             Intent       = autoclass("android.content.Intent")
-            SRTAlarm     = autoclass("org.srt.srtbooking.SRTAlarmActivity")
+            # 백그라운드 스레드에서는 시스템 클래스로더로 앱 클래스를 찾지 못하므로
+            # Activity 클래스로더를 통해 직접 로드
+            SRTAlarm     = PA.mActivity.getClassLoader().loadClass(
+                               "org.srt.srtbooking.SRTAlarmActivity")
             PendingIntent= autoclass("android.app.PendingIntent")
             NotifBuilder = autoclass("android.app.Notification$Builder")
             NotifMgr     = autoclass("android.app.NotificationManager")
