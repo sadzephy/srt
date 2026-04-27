@@ -64,22 +64,23 @@ STATIONS = [
 HOURS = [f"{h:02d}" for h in range(24)]
 
 # ── 팔레트 ─────────────────────────────────────────────────
-BG       = (0.91, 0.88, 0.97, 1)
-WHITE    = (1,    1,    1,    1)
-PRIMARY  = (0.38, 0.18, 0.62, 1)
-ACCENT_B = (0.80, 0.88, 1.0,  1)
-ACCENT_G = (0.82, 0.95, 0.86, 1)
-ACCENT_Y = (1.0,  0.94, 0.78, 1)
-ACCENT_P = (0.88, 0.82, 1.0,  1)
-GRAY1    = (0.45, 0.40, 0.55, 1)
-GRAY2    = (0.85, 0.83, 0.92, 1)
-DARK     = (0.12, 0.08, 0.20, 1)
-LIGHT_BG = (0.96, 0.94, 0.99, 1)
+BG       = (0.07, 0.05, 0.13, 1)   # 딥 다크 네이비-퍼플 (배경)
+CARD     = (0.14, 0.12, 0.24, 1)   # 카드/패널 표면
+WHITE    = (1.0,  1.0,  1.0,  1)   # 순백 (버튼 텍스트 등)
+PRIMARY  = (0.62, 0.30, 0.95, 1)   # 비비드 퍼플 (주요 액션)
+ACCENT_B = (0.30, 0.68, 1.0,  1)   # 스카이 블루
+ACCENT_G = (0.22, 0.88, 0.65, 1)   # 민트 그린
+ACCENT_Y = (1.0,  0.80, 0.25, 1)   # 앰버
+ACCENT_P = (0.72, 0.52, 1.0,  1)   # 소프트 라벤더
+GRAY1    = (0.58, 0.53, 0.75, 1)   # 보조 텍스트
+GRAY2    = (0.25, 0.22, 0.35, 1)   # 구분선/테두리
+DARK     = (0.93, 0.90, 1.0,  1)   # 주 텍스트 (다크모드에서 near-white)
+LIGHT_BG = (0.20, 0.18, 0.32, 1)   # 내부 컨테이너
 
 
 # ── 공통 헬퍼 ──────────────────────────────────────────────
 class RoundBox(BoxLayout):
-    def __init__(self, radius=16, bg=WHITE, shadow=True, **kw):
+    def __init__(self, radius=16, bg=CARD, shadow=True, **kw):
         super().__init__(**kw)
         self._r = radius; self._bg = bg; self._sh = shadow
         self.bind(pos=self._draw, size=self._draw)
@@ -88,9 +89,9 @@ class RoundBox(BoxLayout):
         self.canvas.before.clear()
         with self.canvas.before:
             if self._sh:
-                Color(0, 0, 0, 0.06)
-                RoundedRectangle(pos=(self.x+dp(2), self.y-dp(3)),
-                                 size=(self.width-dp(4), self.height), radius=[dp(self._r)])
+                Color(PRIMARY[0], PRIMARY[1], PRIMARY[2], 0.18)
+                RoundedRectangle(pos=(self.x, self.y-dp(2)),
+                                 size=(self.width, self.height+dp(1)), radius=[dp(self._r+1)])
             Color(*self._bg)
             RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(self._r)])
 
@@ -123,7 +124,7 @@ class PillButton(Button):
     def _draw(self, *_):
         self.canvas.before.clear()
         with self.canvas.before:
-            Color(*((0.38, 0.36, 0.48, 1) if self.disabled else self._bg))
+            Color(*((0.25, 0.22, 0.38, 1) if self.disabled else self._bg))
             RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(28)])
 
 
@@ -142,7 +143,7 @@ class FieldCard(RoundBox):
         super().__init__(orientation="vertical",
                          padding=[dp(12), dp(6), dp(12), dp(6)],
                          spacing=dp(2), size_hint_y=None, height=dp(62),
-                         radius=14, bg=WHITE, **kw)
+                         radius=14, bg=CARD, **kw)
         self.add_widget(lbl(label_text, size=11, color=GRAY1, bold=True,
                             size_hint_y=None, height=dp(16)))
         self.add_widget(widget)
@@ -166,7 +167,7 @@ class TrainRow(ToggleButton):
     def _draw(self, *_):
         self.canvas.before.clear()
         with self.canvas.before:
-            Color(*(self._accent if self._sel else WHITE))
+            Color(*(self._accent if self._sel else CARD))
             RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(14)])
 
 
@@ -185,7 +186,7 @@ class StationPickerPopup(ModalView):
         outer = BoxLayout(orientation="vertical", size_hint=(0.95, 0.88),
                           pos_hint={"center_x": 0.5, "center_y": 0.54})
         with outer.canvas.before:
-            Color(*WHITE)
+            Color(*CARD)
             self._bg = RoundedRectangle(radius=[dp(20)])
         outer.bind(pos=lambda *_: setattr(self._bg, "pos", outer.pos),
                    size=lambda *_: setattr(self._bg, "size", outer.size))
@@ -296,7 +297,7 @@ class DateTimePickerPopup(ModalView):
         outer = BoxLayout(orientation="vertical", size_hint=(0.95, None),
                           pos_hint={"center_x": 0.5, "center_y": 0.5})
         with outer.canvas.before:
-            Color(*WHITE)
+            Color(*CARD)
             self._bg = RoundedRectangle(radius=[dp(20)])
         outer.bind(pos=lambda *_: setattr(self._bg, "pos", outer.pos),
                    size=lambda *_: setattr(self._bg, "size", outer.size),
@@ -387,7 +388,7 @@ class DateTimePickerPopup(ModalView):
         # 요일 헤더
         dow = GridLayout(cols=7, size_hint_y=None, height=dp(36))
         for i, d in enumerate(["일","월","화","수","목","금","토"]):
-            c = (0.85,0.2,0.2,1) if i==0 else (0.2,0.3,0.85,1) if i==6 else GRAY1
+            c = (0.95,0.40,0.40,1) if i==0 else (0.50,0.70,1.0,1) if i==6 else GRAY1
             dow.add_widget(lbl(d, size=13, bold=True, color=c, halign="center",
                                size_hint_y=None, height=dp(36)))
         self._cal_box.add_widget(dow)
@@ -404,9 +405,9 @@ class DateTimePickerPopup(ModalView):
                 disabled = d < today or d > max_date
                 is_today = (d == today)
                 is_sel   = (day == self._day)
-                base_color = (0.78, 0.76, 0.82, 1) if disabled else \
-                             ((0.85, 0.2, 0.2, 1) if i == 0 else
-                              (0.2, 0.3, 0.85, 1) if i == 6 else DARK)
+                base_color = (0.38, 0.34, 0.50, 1) if disabled else \
+                             ((0.95, 0.40, 0.40, 1) if i == 0 else
+                              (0.50, 0.70, 1.0,  1) if i == 6 else DARK)
                 btn = Button(text=str(day),
                              background_normal="", background_color=(0, 0, 0, 0),
                              color=base_color,
@@ -503,7 +504,7 @@ class TimePickerPopup(ModalView):
         outer = BoxLayout(orientation="vertical", size_hint=(0.95, None),
                           pos_hint={"center_x": 0.5, "center_y": 0.5})
         with outer.canvas.before:
-            Color(*WHITE)
+            Color(*CARD)
             self._bg = RoundedRectangle(radius=[dp(20)])
         outer.bind(pos=lambda *_: setattr(self._bg, "pos", outer.pos),
                    size=lambda *_: setattr(self._bg, "size", outer.size),
@@ -539,7 +540,7 @@ class TimePickerPopup(ModalView):
             text=f"{self._hour:02d}", multiline=False, input_filter="int",
             font_size=dp(20), halign="center",
             size_hint=(None, None), size=(dp(64), dp(44)),
-            background_color=WHITE, foreground_color=list(DARK),
+            background_color=LIGHT_BG, foreground_color=list(DARK),
             cursor_color=list(PRIMARY), padding=[dp(8), dp(8)])
         hm_row.add_widget(self._hour_input)
         hm_row.add_widget(lbl("시", size=14, color=DARK, size_hint=(None,1), width=dp(20)))
@@ -547,7 +548,7 @@ class TimePickerPopup(ModalView):
             text=f"{self._minute:02d}", multiline=False, input_filter="int",
             font_size=dp(20), halign="center",
             size_hint=(None, None), size=(dp(64), dp(44)),
-            background_color=WHITE, foreground_color=list(DARK),
+            background_color=LIGHT_BG, foreground_color=list(DARK),
             cursor_color=list(PRIMARY), padding=[dp(8), dp(8)])
         hm_row.add_widget(self._minute_input)
         hm_row.add_widget(lbl("분", size=14, color=DARK, size_hint=(None,1), width=dp(20)))
@@ -582,7 +583,7 @@ class TimePickerPopup(ModalView):
 
         dow = GridLayout(cols=7, size_hint_y=None, height=dp(36))
         for i, d in enumerate(["일","월","화","수","목","금","토"]):
-            c = (0.85,0.2,0.2,1) if i==0 else (0.2,0.3,0.85,1) if i==6 else GRAY1
+            c = (0.95,0.40,0.40,1) if i==0 else (0.50,0.70,1.0,1) if i==6 else GRAY1
             dow.add_widget(lbl(d, size=13, bold=True, color=c, halign="center",
                                size_hint_y=None, height=dp(36)))
         self._cal_box.add_widget(dow)
@@ -597,9 +598,9 @@ class TimePickerPopup(ModalView):
                 disabled = d < today or d > max_date
                 is_today = (d == today)
                 is_sel   = (day == self._day)
-                base_color = (0.78,0.76,0.82,1) if disabled else \
-                             ((0.85,0.2,0.2,1) if i==0 else
-                              (0.2,0.3,0.85,1) if i==6 else DARK)
+                base_color = (0.38,0.34,0.50,1) if disabled else \
+                             ((0.95,0.40,0.40,1) if i==0 else
+                              (0.50,0.70,1.0, 1) if i==6 else DARK)
                 btn = Button(text=str(day),
                              background_normal="", background_color=(0,0,0,0),
                              color=base_color, font_size=dp(15),
@@ -679,7 +680,7 @@ class HistoryPopup(ModalView):
                           size_hint=(0.93, 0.80),
                           pos_hint={"center_x": 0.5, "center_y": 0.52})
         with outer.canvas.before:
-            Color(*BG)
+            Color(*CARD)
             self._outer_rect = RoundedRectangle(pos=outer.pos, size=outer.size,
                                                 radius=[dp(20)])
         outer.bind(pos=lambda i, v: setattr(self._outer_rect, "pos", v),
@@ -722,11 +723,11 @@ class HistoryPopup(ModalView):
         grid.bind(minimum_height=grid.setter("height"))
 
         EVENT_COLOR = {
-            "시작":   (0.35, 0.55, 1.0,  1),
-            "예약시작": (0.35, 0.55, 1.0, 1),
-            "중지":   (0.55, 0.55, 0.65, 1),
-            "중단":   (0.85, 0.45, 0.20, 1),  # 주황 — OS 강제 종료
-            "완료":   (0.25, 0.85, 0.50, 1),
+            "시작":   (0.40, 0.68, 1.0,  1),
+            "예약시작": (0.40, 0.68, 1.0, 1),
+            "중지":   (0.62, 0.58, 0.78, 1),
+            "중단":   (1.0,  0.58, 0.28, 1),  # 주황 — OS 강제 종료
+            "완료":   (0.22, 0.92, 0.60, 1),
         }
 
         if not self._history:
@@ -1077,7 +1078,7 @@ class SRTWidget(BoxLayout):
         self.add_widget(self._spacer(4))
 
         # ── 조회 버튼 ──
-        sb = PillButton("열차 조회", bg=DARK)
+        sb = PillButton("열차 조회", bg=PRIMARY)
         sb.bind(on_press=lambda _: threading.Thread(target=self._search_thread, daemon=True).start())
         self.add_widget(sb)
 
@@ -1149,10 +1150,10 @@ class SRTWidget(BoxLayout):
 
         # ── 예매 버튼 ──
         br = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(10))
-        self.start_btn = PillButton("예매 시작", bg=(0.45, 0.20, 0.75, 1))
+        self.start_btn = PillButton("예매 시작", bg=(0.58, 0.25, 0.92, 1))
         self.start_btn.disabled = True
         self.start_btn.bind(on_press=lambda _: self.start())
-        self.stop_btn = PillButton("중지", bg=(0.55, 0.50, 0.65, 1))
+        self.stop_btn = PillButton("중지", bg=(0.42, 0.38, 0.58, 1))
         self.stop_btn.disabled = True
         self.stop_btn.bind(on_press=lambda _: self.stop())
         br.add_widget(self.start_btn)
@@ -1164,7 +1165,7 @@ class SRTWidget(BoxLayout):
                                 halign="center", size_hint_y=None, height=dp(28))
         self.add_widget(self.status_label)
 
-        log_card = RoundBox(orientation="vertical", radius=14, bg=WHITE,
+        log_card = RoundBox(orientation="vertical", radius=14, bg=CARD,
                             size_hint_y=None, height=dp(300), padding=dp(10))
         self.log_sv = ScrollView(always_overscroll=False, effect_cls=ScrollEffect,
                                  do_scroll_x=False)
@@ -1213,7 +1214,7 @@ class SRTWidget(BoxLayout):
         outer = BoxLayout(orientation="vertical", size_hint=(0.85, None),
                           pos_hint={"center_x":0.5, "center_y":0.55})
         with outer.canvas.before:
-            Color(*WHITE)
+            Color(*CARD)
             rr = RoundedRectangle(radius=[dp(20)])
         outer.bind(pos=lambda *_: setattr(rr,"pos",outer.pos),
                    size=lambda *_: setattr(rr,"size",outer.size))
