@@ -809,8 +809,10 @@ class SRTWidget(BoxLayout):
         self._build_ui()
         self._load_settings()
         self._load_history()
-        Clock.schedule_once(lambda dt: self._request_battery_opt(), 2)
-        Clock.schedule_once(lambda dt: self._check_fullscreen_perm(), 3)
+        Clock.schedule_once(lambda dt: self._request_notification_perm(), 2)
+        Clock.schedule_once(lambda dt: self._request_overlay_perm(), 4)
+        Clock.schedule_once(lambda dt: self._request_battery_opt(), 6)
+        Clock.schedule_once(lambda dt: self._check_fullscreen_perm(), 8)
 
     def _spacer(self, h=8):
         return Widget(size_hint_y=None, height=dp(h))
@@ -1852,6 +1854,45 @@ class SRTWidget(BoxLayout):
             ctx.startService(intent)
         except Exception:
             pass
+
+    def _request_notification_perm(self):
+        """Android 13+: POST_NOTIFICATIONS 런타임 권한 요청 — 미허가 시 시스템 다이얼로그 표시"""
+        try:
+            from jnius import autoclass
+            BuildVersion   = autoclass("android.os.Build$VERSION")
+            if BuildVersion.SDK_INT < 33:   # Android 13 미만은 자동 허용
+                return
+            PA             = autoclass("org.kivy.android.PythonActivity")
+            PackageManager = autoclass("android.content.pm.PackageManager")
+            ctx  = PA.mActivity
+            perm = "android.permission.POST_NOTIFICATIONS"
+            if ctx.checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED:
+                ctx.requestPermissions([perm], 1001)
+                self.log("🔔 알림 권한 요청 (팝업에서 '허용' 선택)")
+        except Exception as e:
+            self.log(f"⚠ 알림 권한 요청 실패: {e}")
+
+    def _request_overlay_perm(self):
+        """다른 앱 위에 표시(SYSTEM_ALERT_WINDOW) 미허가 시 설정 화면으로 안내"""
+        try:
+            from jnius import autoclass
+            PA       = autoclass("org.kivy.android.PythonActivity")
+            Settings = autoclass("android.provider.Settings")
+            ctx = PA.mActivity
+            if Settings.canDrawOverlays(ctx):
+                return  # 이미 허용됨
+            self.log(
+                "⚠ '다른 앱 위에 표시' 권한 미허가\n"
+                "→ 잠금화면 오버레이가 동작하지 않습니다\n"
+                "→ 설정 화면으로 이동합니다")
+            Intent = autoclass("android.content.Intent")
+            Uri    = autoclass("android.net.Uri")
+            intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+            intent.setData(Uri.parse(f"package:{ctx.getPackageName()}"))
+            intent.addFlags(0x10000000)
+            ctx.startActivity(intent)
+        except Exception as e:
+            self.log(f"⚠ 오버레이 권한 확인 실패: {e}")
 
     def _check_fullscreen_perm(self):
         """Android 14+: USE_FULL_SCREEN_INTENT 권한 확인 — 미허가 시 설정 안내"""
