@@ -809,6 +809,7 @@ class SRTWidget(BoxLayout):
         self._load_settings()
         self._load_history()
         Clock.schedule_once(lambda dt: self._request_battery_opt(), 2)
+        Clock.schedule_once(lambda dt: self._check_fullscreen_perm(), 3)
 
     def _spacer(self, h=8):
         return Widget(size_hint_y=None, height=dp(h))
@@ -1858,6 +1859,30 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
+    def _check_fullscreen_perm(self):
+        """Android 14+: USE_FULL_SCREEN_INTENT 권한 확인 — 미허가 시 설정 안내"""
+        try:
+            from jnius import autoclass
+            BuildVersion = autoclass("android.os.Build$VERSION")
+            if BuildVersion.SDK_INT < 34:
+                return
+            PA  = autoclass("org.kivy.android.PythonActivity")
+            ctx = PA.mActivity
+            nm  = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
+            if not nm.canUseFullScreenIntent():
+                self.log(
+                    "⚠ [Android 14+] '전체화면 알림' 권한 미허가\n"
+                    "→ 잠금화면 알람이 표시되지 않습니다\n"
+                    "→ 설정 > 앱 > SRT > 특별한 앱 권한 > 전체화면 알림 → 허용")
+                Intent = autoclass("android.content.Intent")
+                Uri    = autoclass("android.net.Uri")
+                i = Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT")
+                i.setData(Uri.parse(f"package:{ctx.getPackageName()}"))
+                i.addFlags(0x10000000)
+                ctx.startActivity(i)
+        except Exception:
+            pass
+
     def _request_battery_opt(self):
         """앱 시작 시 한 번만 배터리 최적화 무시 요청"""
         try:
@@ -1922,6 +1947,18 @@ class SRTWidget(BoxLayout):
             time.sleep(1)
 
     def _do_start(self):
+        # Android 14+ 전체화면 알림 권한 미허가 시 경고
+        try:
+            from jnius import autoclass
+            BuildVersion = autoclass("android.os.Build$VERSION")
+            if BuildVersion.SDK_INT >= 34:
+                PA = autoclass("org.kivy.android.PythonActivity")
+                nm = PA.mActivity.getSystemService(PA.mActivity.NOTIFICATION_SERVICE)
+                if not nm.canUseFullScreenIntent():
+                    self.log("⚠ 전체화면 알림 권한 없음 — 잠금화면 알람 미작동 (앱 설정에서 허용 필요)")
+        except Exception:
+            pass
+
         t = self._target_train
         dep_hm = f"{t.dep_time[:2]}:{t.dep_time[2:4]}"
         self.log(f"\n▶ {t.train_number}호 {dep_hm} 예매 시작")
