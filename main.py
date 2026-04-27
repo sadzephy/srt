@@ -742,7 +742,7 @@ class HistoryPopup(ModalView):
                 # 높이를 명시적으로 계산 (BoxLayout은 minimum_height 미지원)
                 row_h = dp(10) + dp(22) + dp(2)          # 패딩상단 + 시간행 + 간격
                 if detail: row_h += dp(22) + dp(2)
-                if result: row_h += dp(20) + dp(2)
+                if result: row_h += dp(20) * (result.count('\n') + 1) + dp(2)
                 row_h += dp(1) + dp(10)                  # 구분선 + 패딩하단
 
                 row = BoxLayout(orientation="vertical", size_hint_y=None, height=row_h,
@@ -762,9 +762,10 @@ class HistoryPopup(ModalView):
                                        halign="left",
                                        size_hint_y=None, height=dp(22)))
                 if result:
+                    n_lines = result.count('\n') + 1
                     row.add_widget(lbl(result, size=13, color=color,
                                        halign="left",
-                                       size_hint_y=None, height=dp(20)))
+                                       size_hint_y=None, height=dp(20) * n_lines))
 
                 # 하단 구분선
                 div = Widget(size_hint_y=None, height=dp(1))
@@ -1450,6 +1451,45 @@ class SRTWidget(BoxLayout):
         except Exception:
             pass
 
+    def _show_done_notification(self, detail: str, result: str):
+        """예매 진행중 뱃지(101) → 예매 완료 뱃지(102) 교체. 클릭 시 앱 오픈."""
+        try:
+            from jnius import autoclass
+            PA           = autoclass("org.kivy.android.PythonActivity")
+            NotifBuilder = autoclass("android.app.Notification$Builder")
+            NotifMgr     = autoclass("android.app.NotificationManager")
+            NotifCh      = autoclass("android.app.NotificationChannel")
+            Notification = autoclass("android.app.Notification")
+            PendingIntent= autoclass("android.app.PendingIntent")
+            BuildVersion = autoclass("android.os.Build$VERSION")
+            ctx = PA.mActivity
+            nm  = ctx.getSystemService(ctx.NOTIFICATION_SERVICE)
+            nm.cancel(101)   # 진행중 뱃지 제거
+            ch_id = "srt_done"
+            if BuildVersion.SDK_INT >= 26:
+                if nm.getNotificationChannel(ch_id) is None:
+                    ch = NotifCh(ch_id, "SRT 예매 완료", NotifMgr.IMPORTANCE_DEFAULT)
+                    ch.enableVibration(False)
+                    nm.createNotificationChannel(ch)
+            launch = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName())
+            launch.addFlags(0x10000000)
+            pi = PendingIntent.getActivity(
+                ctx, 2, launch,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
+            # 두 번째 줄(rsv 정보)만 표시
+            sub = result.split("\n", 1)[1] if "\n" in result else result
+            builder = (NotifBuilder(ctx, ch_id)
+                       .setContentTitle("✅ SRT 예매 완료!")
+                       .setContentText(sub)
+                       .setSmallIcon(ctx.getApplicationInfo().icon)
+                       .setContentIntent(pi)
+                       .setAutoCancel(True))
+            if BuildVersion.SDK_INT < 26:
+                builder = builder.setPriority(Notification.PRIORITY_DEFAULT)
+            nm.notify(102, builder.build())
+        except Exception:
+            pass
+
     def _send_android_notification(self, title: str, text: str):
         """Android 알림 전송 — 백그라운드 스레드에서도 동작 (잠금화면 포함)"""
         try:
@@ -2093,9 +2133,12 @@ class SRTWidget(BoxLayout):
                                 Clock.schedule_once(lambda dt: self.set_status("✅ 예매 완료!"), 0)
                                 dep_hm  = f"{target.dep_time[:2]}:{target.dep_time[2:4]}"
                                 detail  = f"{self._dep}→{self._arr}  {self._date}  {dep_hm}  {self._seat_val}"
-                                result  = f"열차 {target.train_number}호 예매 성공!"
+                                result  = f"열차 {target.train_number}호 예매 성공!\n{rsv}"
                                 self._add_history("완료", detail, result)
                                 self._notify("🎉 SRT 예매 완료!", result)
+                                threading.Thread(
+                                    target=lambda: self._show_done_notification(detail, result),
+                                    daemon=True).start()
                                 self._release_wake_lock()
                                 Clock.schedule_once(lambda dt: self.stop(_record=False), 0)
                                 return
