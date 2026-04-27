@@ -1316,42 +1316,32 @@ class SRTWidget(BoxLayout):
             pass
 
     def _notify(self, title: str, text: str, is_success: bool = True):
-        """알림 — 진동 + 팝업(잠금화면 포함)
-        화면 OFF+잠김: full-screen intent → SRTAlarmActivity가 화면 켜고 잠금화면 위 표시
-        화면 ON:       SRTOverlay 오버레이 표시"""
+        """알림 — 진동 + 알림 전송 + 오버레이
+        • 알림(full-screen intent)은 백그라운드 스레드에서 직접 전송 (신뢰성 최우선)
+        • 오버레이는 메인 스레드에서 처리 (WindowManager 요구사항)"""
         self._start_alarm()
+        # 알림을 @mainthread 스케줄 없이 즉시 전송 — 잠금화면 상태에서도 확실히 동작
+        threading.Thread(
+            target=lambda: self._show_fullscreen_notif(title, text, is_success),
+            daemon=True).start()
+        # 오버레이는 별도로 메인 스레드에서
         self._show_alarm_popup(title, text, is_success)
 
     @mainthread
     def _show_alarm_popup(self, title: str, message: str, is_success: bool = True):
-        """전용 알람 팝업 — SYSTEM_ALERT_WINDOW 오버레이로 잠금화면 위 직접 표시.
-        권한 없을 경우: 설정 화면 안내 + 헤드업 알림 fallback."""
+        """오버레이 팝업 — SRTOverlay (화면 ON 상태에서 표시)
+        알림(full-screen intent)은 _notify()에서 별도 스레드로 이미 전송됨"""
         try:
             from jnius import autoclass
             PA       = autoclass("org.kivy.android.PythonActivity")
             Settings = autoclass("android.provider.Settings")
             ctx      = PA.mActivity
-
             if Settings.canDrawOverlays(ctx):
-                # 권한 있음 → 오버레이 + 알림 뱃지 둘 다 표시
                 SRTOverlay = autoclass("org.srt.srtbooking.SRTOverlay")
                 SRTOverlay.show(ctx, title, message, is_success)
-                self._show_fullscreen_notif(title, message, is_success)
-            else:
-                # 권한 없음 → 설정 안내 (1회) + 알림 fallback
-                self.log("⚠ '다른 앱 위에 표시' 권한 필요 → 설정에서 허용하면 잠금화면 팝업 사용 가능")
-                Intent = autoclass("android.content.Intent")
-                Uri    = autoclass("android.net.Uri")
-                intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse(f"package:{ctx.getPackageName()}"))
-                intent.addFlags(0x10000000)
-                ctx.startActivity(intent)
-                self._show_fullscreen_notif(title, message, is_success)
         except Exception as e:
-            self.log(f"⚠ 알람 팝업 실패: {e}")
-            self._show_fullscreen_notif(title, message, is_success)
+            self.log(f"⚠ 오버레이 표시 실패: {e}")
 
-    @mainthread
     def _show_fullscreen_notif(self, title: str, message: str, is_success: bool = True):
         """Full-Screen Intent 알림 — 잠금화면 위 SRTAlarmActivity 실행"""
         try:
