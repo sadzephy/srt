@@ -64,18 +64,18 @@ STATIONS = [
 HOURS = [f"{h:02d}" for h in range(24)]
 
 # ── 팔레트 ─────────────────────────────────────────────────
-BG       = (0.07, 0.05, 0.13, 1)   # 딥 다크 네이비-퍼플 (배경)
-CARD     = (0.14, 0.12, 0.24, 1)   # 카드/패널 표면
-WHITE    = (1.0,  1.0,  1.0,  1)   # 순백 (버튼 텍스트 등)
-PRIMARY  = (0.62, 0.30, 0.95, 1)   # 비비드 퍼플 (주요 액션)
-ACCENT_B = (0.30, 0.68, 1.0,  1)   # 스카이 블루
-ACCENT_G = (0.22, 0.88, 0.65, 1)   # 민트 그린
-ACCENT_Y = (1.0,  0.80, 0.25, 1)   # 앰버
-ACCENT_P = (0.72, 0.52, 1.0,  1)   # 소프트 라벤더
-GRAY1    = (0.58, 0.53, 0.75, 1)   # 보조 텍스트
-GRAY2    = (0.25, 0.22, 0.35, 1)   # 구분선/테두리
-DARK     = (0.93, 0.90, 1.0,  1)   # 주 텍스트 (다크모드에서 near-white)
-LIGHT_BG = (0.20, 0.18, 0.32, 1)   # 내부 컨테이너
+BG       = (0.988, 0.980, 1.0,   1)  # 화이트 (배경)
+CARD     = (1.0,   1.0,   1.0,   1)  # 순백 카드
+WHITE    = (1.0,   1.0,   1.0,   1)  # 순백
+PRIMARY  = (0.596, 0.165, 0.518, 1)  # SRT 마젠타-퍼플 rgb(152,42,132)
+ACCENT_B = (0.843, 0.769, 0.922, 1)  # 연 라벤더
+ACCENT_G = (0.824, 0.961, 0.882, 1)  # 연 민트
+ACCENT_Y = (1.0,   0.949, 0.863, 1)  # 연 앰버
+ACCENT_P = (0.922, 0.843, 0.973, 1)  # 연 퍼플 (도착역 칩 배경)
+GRAY1    = (0.451, 0.412, 0.502, 1)  # 보조 텍스트
+GRAY2    = (0.882, 0.863, 0.910, 1)  # 구분선/테두리
+DARK     = (0.110, 0.086, 0.157, 1)  # 주 텍스트 (near-black)
+LIGHT_BG = (0.961, 0.949, 0.980, 1)  # 섹션 헤더 배경
 
 
 # ── 공통 헬퍼 ──────────────────────────────────────────────
@@ -89,7 +89,7 @@ class RoundBox(BoxLayout):
         self.canvas.before.clear()
         with self.canvas.before:
             if self._sh:
-                Color(PRIMARY[0], PRIMARY[1], PRIMARY[2], 0.18)
+                Color(0.55, 0.45, 0.65, 0.10)
                 RoundedRectangle(pos=(self.x, self.y-dp(2)),
                                  size=(self.width, self.height+dp(1)), radius=[dp(self._r+1)])
             Color(*self._bg)
@@ -118,13 +118,13 @@ class PillButton(Button):
                   disabled=self._on_disabled)
 
     def _on_disabled(self, *_):
-        self.color = (0.8, 0.8, 0.8, 1) if self.disabled else self._fg
+        self.color = (0.55, 0.50, 0.60, 1) if self.disabled else self._fg
         Clock.schedule_once(self._draw, 0)
 
     def _draw(self, *_):
         self.canvas.before.clear()
         with self.canvas.before:
-            Color(*((0.25, 0.22, 0.38, 1) if self.disabled else self._bg))
+            Color(*((0.82, 0.80, 0.86, 1) if self.disabled else self._bg))
             RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(28)])
 
 
@@ -817,6 +817,62 @@ class SRTWidget(BoxLayout):
     def _spacer(self, h=8):
         return Widget(size_hint_y=None, height=dp(h))
 
+    def _divider_line(self):
+        sep = Widget(size_hint_y=None, height=dp(1))
+        with sep.canvas:
+            Color(*GRAY2)
+            r = Rectangle(pos=sep.pos, size=sep.size)
+        sep.bind(pos=lambda i, v, rr=r: setattr(rr, "pos", v),
+                 size=lambda i, v, rr=r: setattr(rr, "size", v))
+        return sep
+
+    def _field_row(self, label_text, widget):
+        row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(62),
+                        padding=[dp(12), dp(6), dp(12), dp(6)], spacing=dp(2))
+        row.add_widget(lbl(label_text, size=11, color=GRAY1, bold=True,
+                           size_hint_y=None, height=dp(16)))
+        row.add_widget(widget)
+        return row
+
+    def _make_card(self, title, items, footer=None):
+        HDR_H = dp(36)
+        DIV_H = dp(1)
+        PAD_BOT = dp(8)
+        total_items_h = sum(w.height for w in items)
+        n_inner_divs = max(0, len(items) - 1)
+        ftr_h = (DIV_H + dp(8) + footer.height + dp(8)) if footer else 0
+        total_h = HDR_H + DIV_H + total_items_h + n_inner_divs * DIV_H + ftr_h + PAD_BOT
+        card = RoundBox(orientation="vertical", size_hint_y=None, height=total_h,
+                        spacing=0, padding=0, radius=16, bg=CARD)
+        hdr = BoxLayout(size_hint_y=None, height=HDR_H, padding=[dp(14), 0, dp(14), 0])
+        with hdr.canvas.before:
+            Color(*LIGHT_BG)
+            h_r = RoundedRectangle(pos=hdr.pos, size=hdr.size,
+                                   radius=[dp(16), dp(16), 0, 0])
+        hdr.bind(pos=lambda i, v, r=h_r: [setattr(r, "pos", i.pos), setattr(r, "size", i.size)],
+                 size=lambda i, v, r=h_r: [setattr(r, "pos", i.pos), setattr(r, "size", i.size)])
+        hdr.add_widget(lbl(title, size=12, color=PRIMARY, bold=True))
+        card.add_widget(hdr)
+        card.add_widget(self._divider_line())
+        for i, item in enumerate(items):
+            if i > 0:
+                card.add_widget(self._divider_line())
+            card.add_widget(item)
+        if footer:
+            card.add_widget(self._divider_line())
+            fw = BoxLayout(size_hint_y=None, height=dp(8) + footer.height + dp(8),
+                           padding=[dp(8), dp(8)])
+            fw.add_widget(footer)
+            card.add_widget(fw)
+        card.add_widget(Widget(size_hint_y=None, height=PAD_BOT))
+        return card
+
+    def _swap_stations(self, *_):
+        self._dep, self._arr = self._arr, self._dep
+        self._dep_btn.text = self._dep
+        self._arr_btn.text = self._arr
+        self._save_settings()
+
     # ── 카드 암호화 ─────────────────────────────────────────────
     def _enc_key(self):
         import hashlib
@@ -969,7 +1025,7 @@ class SRTWidget(BoxLayout):
         self.bind(pos=lambda *a: setattr(self._bg, "pos", self.pos),
                   size=lambda *a: setattr(self._bg, "size", self.size))
 
-        # 타이틀
+        # ── AppBar ──────────────────────────────────────────────
         tb = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(60),
                        spacing=dp(12), padding=(dp(4), 0, 0, 0))
         _icon_path = resource_find("icon.png") or os.path.join(
@@ -989,38 +1045,35 @@ class SRTWidget(BoxLayout):
         hist_btn.bind(on_press=lambda _: self._open_history())
         tb.add_widget(hist_btn)
         self.add_widget(tb)
+        self.add_widget(self._spacer(12))
 
-        # ── 로그인 ──
-        self.add_widget(lbl("로그인 정보", size=12, color=GRAY1, bold=True,
-                            size_hint_y=None, height=dp(20)))
+        # ── 로그인 카드 ──────────────────────────────────────────
         self.member_no = TextInput(
             text="2582560569", multiline=False, font_size=dp(16),
             background_normal="", background_active="",
-            background_color=(0,0,0,0), foreground_color=DARK,
+            background_color=(0, 0, 0, 0), foreground_color=list(DARK),
             size_hint_y=None, height=dp(36),
             padding=[dp(10), dp(8), dp(10), dp(8)],
         )
         self.password = TextInput(
             text="ys2love^^", password=True, multiline=False, font_size=dp(16),
             background_normal="", background_active="",
-            background_color=(0,0,0,0), foreground_color=DARK,
+            background_color=(0, 0, 0, 0), foreground_color=list(DARK),
             size_hint_y=None, height=dp(36),
             padding=[dp(10), dp(8), dp(10), dp(8)],
         )
-        self.add_widget(FieldCard("회원번호", self.member_no))
-        self.add_widget(FieldCard("비밀번호", self.password))
+        self.add_widget(self._make_card("로그인", [
+            self._field_row("회원번호", self.member_no),
+            self._field_row("비밀번호", self.password),
+        ]))
+        self.add_widget(self._spacer(10))
 
-        self.add_widget(self._spacer(4))
-
-        # ── 결제 정보 ──
-        self.add_widget(lbl("결제 정보 (자동결제용)", size=12, color=GRAY1, bold=True,
-                            size_hint_y=None, height=dp(20)))
-
+        # ── 결제 카드 ────────────────────────────────────────────
         def _cinput(hint, pw=False):
             return TextInput(
                 hint_text=hint, password=pw, multiline=False, font_size=dp(15),
                 background_normal="", background_active="",
-                background_color=(0, 0, 0, 0), foreground_color=DARK,
+                background_color=(0, 0, 0, 0), foreground_color=list(DARK),
                 size_hint_y=None, height=dp(36),
                 padding=[dp(10), dp(8), dp(10), dp(8)],
             )
@@ -1030,63 +1083,57 @@ class SRTWidget(BoxLayout):
         self.card_birth  = _cinput("생년월일 6자리 YYMMDD")
         self.card_expire = _cinput("유효기간 4자리 MMYY")
 
-        self.add_widget(FieldCard("카드번호", self.card_number))
         crow = BoxLayout(size_hint_y=None, height=dp(62), spacing=dp(10))
-        crow.add_widget(FieldCard("비밀번호 앞2자리", self.card_pw))
-        crow.add_widget(FieldCard("유효기간(MMYY)", self.card_expire))
-        self.add_widget(crow)
-        self.add_widget(FieldCard("생년월일(YYMMDD)", self.card_birth))
-        save_btn = PillButton("💳 카드 저장 (암호화)", bg=(0.22, 0.52, 0.35, 1),
+        crow.add_widget(self._field_row("비밀번호 앞2자리", self.card_pw))
+        crow.add_widget(self._field_row("유효기간(MMYY)", self.card_expire))
+
+        save_btn = PillButton("💳 카드 저장 (암호화)", bg=(0.18, 0.55, 0.34, 1),
                               height=dp(44), font_size=dp(15))
         save_btn.bind(on_press=lambda _: self._save_card())
-        self.add_widget(save_btn)
 
+        self.add_widget(self._make_card("결제 정보", [
+            self._field_row("카드번호", self.card_number),
+            crow,
+            self._field_row("생년월일(YYMMDD)", self.card_birth),
+        ], footer=save_btn))
+        self.add_widget(self._spacer(10))
 
-        self.add_widget(self._spacer(4))
-
-        # ── 역 선택 ──
-        self.add_widget(lbl("열차 검색", size=12, color=GRAY1, bold=True,
-                            size_hint_y=None, height=dp(20)))
-
-        dep_arr = BoxLayout(size_hint_y=None, height=dp(62), spacing=dp(10))
-        self._dep_btn = FieldBtn(self._dep)
-        self._arr_btn = FieldBtn(self._arr)
+        # ── 열차 검색 카드 ───────────────────────────────────────
+        dep_arr = BoxLayout(size_hint_y=None, height=dp(72), spacing=dp(8),
+                            padding=[dp(6), dp(4)])
+        self._dep_btn = PillButton(self._dep, bg=PRIMARY, fg=WHITE,
+                                   height=dp(64), font_size=dp(20))
         self._dep_btn.bind(on_press=self._open_station_picker)
+        swap_btn = Button(text="⇄", size_hint=(None, 1), width=dp(44),
+                          background_normal="", background_color=(0, 0, 0, 0),
+                          color=PRIMARY, font_size=dp(18), bold=True)
+        swap_btn.bind(on_press=self._swap_stations)
+        self._arr_btn = PillButton(self._arr, bg=ACCENT_P, fg=PRIMARY,
+                                   height=dp(64), font_size=dp(20))
         self._arr_btn.bind(on_press=self._open_station_picker)
-        dep_arr.add_widget(FieldCard("출발역", self._dep_btn))
-        dep_arr.add_widget(FieldCard("도착역", self._arr_btn))
-        self.add_widget(dep_arr)
+        dep_arr.add_widget(self._dep_btn)
+        dep_arr.add_widget(swap_btn)
+        dep_arr.add_widget(self._arr_btn)
 
-        # ── 날짜/시간 ──
         self._datetime_btn = FieldBtn(f"{self._date}  {self._hour}:00")
         self._datetime_btn.bind(on_press=self._open_datetime_picker)
-        self.add_widget(FieldCard("출발일시", self._datetime_btn))
 
-        # ── 좌석 + 초당호출 ──
-        opt = BoxLayout(size_hint_y=None, height=dp(62), spacing=dp(10))
         self._seat_val = "아무거나"
         self._seat_btn = FieldBtn(self._seat_val)
         self._seat_btn.bind(on_press=self._open_seat_picker)
-        # [멀티워커 비활성화] 3워커 이상 시 로그인 횟수 제한으로 연쇄 차단 발생
-        # self.rate = TextInput(text="3", multiline=False, input_filter="int",
-        #                       font_size=dp(16), background_normal="",
-        #                       background_active="", background_color=(0,0,0,0),
-        #                       foreground_color=DARK,
-        #                       size_hint_y=None, height=dp(36))
-        opt.add_widget(FieldCard("좌석", self._seat_btn))
-        # opt.add_widget(FieldCard("동시 요청 수", self.rate))
-        self.add_widget(opt)
 
-        self.add_widget(self._spacer(4))
+        sb = PillButton("열차 조회", bg=PRIMARY, height=dp(52), font_size=dp(16))
+        sb.bind(on_press=lambda _: threading.Thread(
+            target=self._search_thread, daemon=True).start())
 
-        # ── 조회 버튼 ──
-        sb = PillButton("열차 조회", bg=PRIMARY)
-        sb.bind(on_press=lambda _: threading.Thread(target=self._search_thread, daemon=True).start())
-        self.add_widget(sb)
+        self.add_widget(self._make_card("열차 검색", [
+            dep_arr,
+            self._field_row("출발일시", self._datetime_btn),
+            self._field_row("좌석", self._seat_btn),
+        ], footer=sb))
+        self.add_widget(self._spacer(10))
 
-        self.add_widget(self._spacer(4))
-
-        # ── 결과 ──
+        # ── 결과 ──────────────────────────────────────────────
         self.result_label = lbl("조회 결과", size=12, color=GRAY1, bold=True,
                                 size_hint_y=None, height=0)
         self.add_widget(self.result_label)
@@ -1096,18 +1143,14 @@ class SRTWidget(BoxLayout):
         self.train_list.bind(minimum_height=self._update_train_scroll_height)
         self.train_scroll.add_widget(self.train_list)
         self.add_widget(self.train_scroll)
+        self.add_widget(self._spacer(10))
 
-        self.add_widget(self._spacer(4))
-
-        # ── 예약 시작 시간 설정 ──
-        self.add_widget(lbl("예약 시작 시간 설정 (선택)", size=12, color=GRAY1, bold=True,
-                            size_hint_y=None, height=dp(20)))
+        # ── 예매 옵션 카드 ──────────────────────────────────────
         self._sched_date   = datetime.now().strftime("%Y-%m-%d")
         self._sched_hour   = 8
         self._sched_minute = 0
-        sched_box = RoundBox(orientation="horizontal", radius=12, bg=LIGHT_BG,
-                             size_hint_y=None, height=dp(56),
-                             padding=(dp(12), dp(6)), spacing=dp(8))
+        sched_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(56),
+                              padding=(dp(12), dp(6)), spacing=dp(8))
         self._sched_toggle = ToggleButton(
             text="⏰ 예약 시작", size_hint=(None, 1), width=dp(130),
             background_normal="", background_down="",
@@ -1116,20 +1159,14 @@ class SRTWidget(BoxLayout):
         def _on_sched_toggle(btn, state):
             btn.color = PRIMARY if state == "down" else GRAY1
         self._sched_toggle.bind(state=_on_sched_toggle)
-        self._sched_time_btn = FieldBtn(f"{self._sched_date}  {self._sched_hour:02d}:{self._sched_minute:02d}")
+        self._sched_time_btn = FieldBtn(
+            f"{self._sched_date}  {self._sched_hour:02d}:{self._sched_minute:02d}")
         self._sched_time_btn.bind(on_press=self._open_time_picker)
         sched_box.add_widget(self._sched_toggle)
         sched_box.add_widget(self._sched_time_btn)
-        self.add_widget(sched_box)
 
-        self.add_widget(self._spacer(4))
-
-        # ── 속도 모드 선택 ──
-        self.add_widget(lbl("호출 속도", size=12, color=GRAY1, bold=True,
-                            size_hint_y=None, height=dp(20)))
-        speed_box = RoundBox(orientation="horizontal", radius=12, bg=LIGHT_BG,
-                             size_hint_y=None, height=dp(48),
-                             padding=(dp(6), dp(6)), spacing=dp(6))
+        speed_box = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(48),
+                              padding=(dp(6), dp(6)), spacing=dp(6))
         self._speed_stable_btn = ToggleButton(
             text="안정 (1회/초)", group="speed", state="down",
             background_normal="", background_down="",
@@ -1146,23 +1183,11 @@ class SRTWidget(BoxLayout):
         self._speed_max_btn.bind(state=_on_speed)
         speed_box.add_widget(self._speed_stable_btn)
         speed_box.add_widget(self._speed_max_btn)
-        self.add_widget(speed_box)
 
-        self.add_widget(self._spacer(4))
+        self.add_widget(self._make_card("예매 옵션", [sched_box, speed_box]))
+        self.add_widget(self._spacer(10))
 
-        # ── 예매 버튼 ──
-        br = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(10))
-        self.start_btn = PillButton("예매 시작", bg=(0.58, 0.25, 0.92, 1))
-        self.start_btn.disabled = True
-        self.start_btn.bind(on_press=lambda _: self.start())
-        self.stop_btn = PillButton("중지", bg=(0.42, 0.38, 0.58, 1))
-        self.stop_btn.disabled = True
-        self.stop_btn.bind(on_press=lambda _: self.stop())
-        br.add_widget(self.start_btn)
-        br.add_widget(self.stop_btn)
-        self.add_widget(br)
-
-        # ── 상태 / 로그 ──
+        # ── 상태 / 로그 ──────────────────────────────────────────
         self.status_label = lbl("대기 중", size=14, color=PRIMARY, bold=True,
                                 halign="center", size_hint_y=None, height=dp(28))
         self.add_widget(self.status_label)
@@ -1179,6 +1204,15 @@ class SRTWidget(BoxLayout):
         self.log_sv.add_widget(self.log_label)
         log_card.add_widget(self.log_sv)
         self.add_widget(log_card)
+
+        # ── 예매 버튼 (하단바용 — self에 추가 안 함) ──────────────
+        self.start_btn = PillButton("예매 시작", bg=PRIMARY, height=dp(54), font_size=dp(17))
+        self.start_btn.disabled = True
+        self.start_btn.bind(on_press=lambda _: self.start())
+        self.stop_btn = PillButton("중지", bg=LIGHT_BG, fg=GRAY1, height=dp(54),
+                                   font_size=dp(16), size_hint_x=None, width=dp(90))
+        self.stop_btn.disabled = True
+        self.stop_btn.bind(on_press=lambda _: self.stop())
 
     # ── 팝업 열기 ────────────────────────────────────────────
     def _open_station_picker(self, *_):
@@ -2368,12 +2402,32 @@ class SRTApp(App):
     def build(self):
         from kivy.core.window import Window
         Window.clearcolor = BG
+        root = BoxLayout(orientation="vertical")
         scroll = ScrollView(always_overscroll=False, effect_cls=ScrollEffect)
         self._resuming = False
         self._widget = SRTWidget(size_hint_y=None)
         self._widget.bind(minimum_height=self._widget.setter("height"))
         scroll.add_widget(self._widget)
-        return scroll
+        root.add_widget(scroll)
+
+        # ── 고정 하단 버튼바 ─────────────────────────────────────
+        bar = BoxLayout(size_hint_y=None, height=dp(72),
+                        padding=[dp(16), dp(9), dp(16), dp(9)], spacing=dp(12))
+        with bar.canvas.before:
+            Color(*CARD)
+            bar_bg = Rectangle(pos=bar.pos, size=bar.size)
+            Color(*GRAY2)
+            bar_sep = Rectangle()
+        def _redraw_bar(*_):
+            bar_bg.pos  = bar.pos
+            bar_bg.size = bar.size
+            bar_sep.pos  = (bar.x, bar.top)
+            bar_sep.size = (bar.width, dp(1))
+        bar.bind(pos=_redraw_bar, size=_redraw_bar)
+        bar.add_widget(self._widget.start_btn)
+        bar.add_widget(self._widget.stop_btn)
+        root.add_widget(bar)
+        return root
 
     def on_pause(self):
         self._resuming = False
